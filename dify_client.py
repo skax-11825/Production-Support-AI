@@ -48,7 +48,12 @@ async def request_answer(question: str, context: Optional[str] = None) -> str:
     url = f"{base_url}/chat-messages"
 
     try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
+        # 일부 배포 환경에서는 HTTP -> HTTPS 308 리다이렉트가 발생하므로
+        # follow_redirects=True 로 설정해 안정적으로 응답을 받는다.
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(30.0),
+            follow_redirects=True,
+        ) as client:
             response = await client.post(url, json=payload, headers=headers)
             response.raise_for_status()
             data = response.json()
