@@ -274,9 +274,9 @@ async def generate_answer_with_process_info(
         answer = _format_process_answer(results, stats, process_info, question)
         data_count = len(results)
         
-        # Dify API가 활성화되어 있고 데이터가 많은 경우 요약 요청
-        # (Dify 워크플로우에서 추가 처리할 수도 있으므로 선택사항)
-        if is_dify_enabled() and len(results) > 20:
+        # Dify API 호출 비활성화 (공정정보 기반 답변은 DB 결과를 직접 사용)
+        # Dify 워크플로우에서 이미 처리하므로 여기서는 DB 결과만 반환
+        if False and is_dify_enabled() and len(results) > 20:
             try:
                 logger.info("[공정정보 기반 답변] Dify API로 요약 요청")
                 dify_context = f"다음은 조회된 다운타임 데이터입니다:\n\n{answer[:3000]}..."
@@ -334,27 +334,49 @@ def _format_process_answer(
         answer_parts.append("-" * 60)
         
         for i, result in enumerate(results[:10], 1):
-            answer_parts.append(f"\n{i}. 다운타임 ID: {result.get('informnote_id', 'N/A')}")
-            if result.get('site_id'):
-                answer_parts.append(f"   사이트: {result.get('site_id')}")
-            if result.get('factory_id'):
-                answer_parts.append(f"   공장: {result.get('factory_id')}")
-            if result.get('process_id'):
-                answer_parts.append(f"   공정: {result.get('process_id')}")
-            if result.get('eqp_id'):
-                answer_parts.append(f"   장비: {result.get('eqp_id')}")
-            if result.get('down_start_time'):
-                answer_parts.append(f"   다운 시작: {result.get('down_start_time')}")
-            if result.get('down_end_time'):
-                answer_parts.append(f"   다운 종료: {result.get('down_end_time')}")
-            if result.get('down_time_minutes'):
-                answer_parts.append(f"   지속 시간: {result.get('down_time_minutes')}분")
-            if result.get('down_type'):
-                answer_parts.append(f"   유형: {result.get('down_type')}")
-            if result.get('error_code'):
-                answer_parts.append(f"   에러 코드: {result.get('error_code')}")
-            if result.get('status_id'):
-                answer_parts.append(f"   상태: {result.get('status_id')}")
+            # Oracle DB는 컬럼명을 대문자로 반환하므로 대소문자 모두 확인
+            informnote_id = result.get('informnote_id') or result.get('INFORMNOTE_ID') or 'N/A'
+            answer_parts.append(f"\n{i}. 다운타임 ID: {informnote_id}")
+            
+            site_id = result.get('site_id') or result.get('SITE_ID')
+            if site_id:
+                answer_parts.append(f"   사이트: {site_id}")
+            
+            factory_id = result.get('factory_id') or result.get('FACTORY_ID')
+            if factory_id:
+                answer_parts.append(f"   공장: {factory_id}")
+            
+            process_id = result.get('process_id') or result.get('PROCESS_ID')
+            if process_id:
+                answer_parts.append(f"   공정: {process_id}")
+            
+            eqp_id = result.get('eqp_id') or result.get('EQP_ID')
+            if eqp_id:
+                answer_parts.append(f"   장비: {eqp_id}")
+            
+            down_start_time = result.get('down_start_time') or result.get('DOWN_START_TIME')
+            if down_start_time:
+                answer_parts.append(f"   다운 시작: {down_start_time}")
+            
+            down_end_time = result.get('down_end_time') or result.get('DOWN_END_TIME')
+            if down_end_time:
+                answer_parts.append(f"   다운 종료: {down_end_time}")
+            
+            down_time_minutes = result.get('down_time_minutes') or result.get('DOWN_TIME_MINUTES')
+            if down_time_minutes is not None:
+                answer_parts.append(f"   지속 시간: {down_time_minutes}분")
+            
+            down_type = result.get('down_type') or result.get('DOWN_TYPE')
+            if down_type:
+                answer_parts.append(f"   유형: {down_type}")
+            
+            error_code = result.get('error_code') or result.get('ERROR_CODE')
+            if error_code:
+                answer_parts.append(f"   에러 코드: {error_code}")
+            
+            status_id = result.get('status_id') or result.get('STATUS_ID')
+            if status_id:
+                answer_parts.append(f"   상태: {status_id}")
         
         if len(results) > 10:
             answer_parts.append(f"\n... 외 {len(results) - 10}건 더 있습니다.")

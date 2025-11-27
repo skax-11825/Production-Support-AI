@@ -56,23 +56,25 @@ class QuestionAnalyzer:
         r'\b(site|Site)[:\s]*([A-Z]{2,4})\b',
     ]
     
-    # 공장 ID 패턴 (FAB1, FAB2 등)
+    # 공장 ID 패턴 (FAB1, FAB2, FAC_M16 등)
     FACTORY_PATTERNS = [
-        r'\b(FAB\d+|FAB\s*\d+)\b',
-        r'\b공장[:\s]*([A-Z0-9]+)\b',
-        r'\b(factory|Factory)[:\s]*([A-Z0-9]+)\b',
+        r'\b(FAC[_\-]?[A-Z0-9]+|FAB\d+|FAB\s*\d+)\b',
+        r'\b공장[:\s]*([A-Z0-9_\-]+)\b',
+        r'\b(factory|Factory)[:\s]*([A-Z0-9_\-]+)\b',
     ]
     
     # 공정 ID 패턴
     PROCESS_PATTERNS = [
-        r'\b(PHOTO|포토|포토리소그래피)\b',
-        r'\b(ETCH|에칭)\b',
-        r'\b(CVD|화학증착)\b',
-        r'\b(PVD|물리증착)\b',
-        r'\b(CMP|화학기계연마)\b',
-        r'\b(IMPLANT|이온주입)\b',
-        r'\b공정[:\s]*([A-Z]+)\b',
-        r'\b(process|Process)[:\s]*([A-Z]+)\b',
+        r'\b(PROC[_\-]?PH|PHOTO|포토|포토리소그래피)\b',
+        r'\b(PROC[_\-]?ET|ETCH|에칭)\b',
+        r'\b(PROC[_\-]?TF|CVD|화학증착|ThinFilm)\b',
+        r'\b(PROC[_\-]?DF|DIFFUSION|확산)\b',
+        r'\b(PROC[_\-]?CM|CMP|화학기계연마)\b',
+        r'\b(PROC[_\-]?IMP|IMPLANT|이온주입)\b',
+        r'\b(PROC[_\-]?CLN|CLEANING|세정)\b',
+        r'\b(PROC[_\-]?MI|METROLOGY|계측)\b',
+        r'\b공정[:\s]*([A-Z_\-]+)\b',
+        r'\b(process|Process)[:\s]*([A-Z_\-]+)\b',
     ]
     
     # 모델 ID 패턴
@@ -183,6 +185,8 @@ class QuestionAnalyzer:
                 factory = match.group(1) if match.groups() else match.group(0)
                 # FAB 숫자 정규화
                 factory = re.sub(r'FAB\s*(\d+)', r'FAB\1', factory, flags=re.IGNORECASE)
+                # FAC_ 형식 정규화
+                factory = re.sub(r'FAC\s*[-_]?\s*([A-Z0-9]+)', r'FAC_\1', factory, flags=re.IGNORECASE)
                 if factory:
                     return factory
         
@@ -196,10 +200,26 @@ class QuestionAnalyzer:
             match = re.search(pattern, text_upper, re.IGNORECASE)
             if match:
                 process = match.group(1) if match.groups() else match.group(0)
-                # 알파벳만 추출
-                process = re.sub(r'[^A-Z]', '', process)
-                if process:
+                # PROC_ 형식인 경우 그대로 사용
+                if 'PROC_' in process or 'PROC-' in process:
+                    # PROC_PH -> PROC_PH, PROC-ET -> PROC_ET
+                    process = re.sub(r'PROC[-_]', 'PROC_', process)
                     return process
+                # 알파벳만 추출하여 PROC_ 접두사 추가
+                process_clean = re.sub(r'[^A-Z]', '', process)
+                if process_clean:
+                    # PHOTO -> PROC_PH, ETCH -> PROC_ET 등 매핑
+                    process_map = {
+                        'PHOTO': 'PROC_PH',
+                        'ETCH': 'PROC_ET',
+                        'CVD': 'PROC_TF',
+                        'DIFFUSION': 'PROC_DF',
+                        'CMP': 'PROC_CM',
+                        'IMPLANT': 'PROC_IMP',
+                        'CLEANING': 'PROC_CLN',
+                        'METROLOGY': 'PROC_MI'
+                    }
+                    return process_map.get(process_clean, f'PROC_{process_clean}')
         
         return None
     

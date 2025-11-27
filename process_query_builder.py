@@ -186,7 +186,7 @@ class ProcessQueryBuilder:
                 
                 # WHERE 절 생성
                 where_conditions = []
-                bind_params = {}
+                bind_params = []  # 리스트로 변경
                 param_index = 1
                 
                 if process_info.site_id:
