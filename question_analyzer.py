@@ -56,11 +56,13 @@ class QuestionAnalyzer:
         r'\b(site|Site)[:\s]*([A-Z]{2,4})\b',
     ]
     
-    # 공장 ID 패턴 (FAB1, FAB2, FAC_M16 등)
+    # 공장 ID 패턴 (FAB1, FAB2, FAC_M16, FAC_C2F 등)
     FACTORY_PATTERNS = [
-        r'\b(FAC[_\-]?[A-Z0-9]+|FAB\d+|FAB\s*\d+)\b',
-        r'\b공장[:\s]*([A-Z0-9_\-]+)\b',
-        r'\b(factory|Factory)[:\s]*([A-Z0-9_\-]+)\b',
+        r'(FAC[_\-][A-Z0-9]+)',  # FAC_M16, FAC_C2F 등 (word boundary 제거)
+        r'\b(FAC[A-Z0-9]+)\b',  # FACM16 등 (언더스코어 없이)
+        r'\b(FAB\d+|FAB\s*\d+)\b',  # FAB1, FAB 1 등
+        r'공장[:\s]*([A-Z0-9_\-]+)',  # 공장: FAC_M16
+        r'(factory|Factory)[:\s]*([A-Z0-9_\-]+)',  # factory: FAC_M16
     ]
     
     # 공정 ID 패턴
@@ -185,8 +187,14 @@ class QuestionAnalyzer:
                 factory = match.group(1) if match.groups() else match.group(0)
                 # FAB 숫자 정규화
                 factory = re.sub(r'FAB\s*(\d+)', r'FAB\1', factory, flags=re.IGNORECASE)
-                # FAC_ 형식 정규화
-                factory = re.sub(r'FAC\s*[-_]?\s*([A-Z0-9]+)', r'FAC_\1', factory, flags=re.IGNORECASE)
+                # FAC 형식 정규화 (FAC_M16, FAC_C2F 등)
+                if factory.startswith('FAC') and '_' not in factory and len(factory) > 3:
+                    # FACM16 -> FAC_M16 형식으로 변환 (숫자나 알파벳이 붙어있는 경우)
+                    factory = re.sub(r'FAC([A-Z])(\d+)', r'FAC_\1\2', factory)
+                    factory = re.sub(r'FAC([A-Z]+)', r'FAC_\1', factory)
+                elif factory.startswith('FAC') and '-' in factory:
+                    # FAC-M16 -> FAC_M16
+                    factory = factory.replace('-', '_')
                 if factory:
                     return factory
         
@@ -196,6 +204,24 @@ class QuestionAnalyzer:
         """공정 ID 추출"""
         text_upper = text.upper()
         
+        # 한글 공정명 매핑 (먼저 처리)
+        korean_process_map = {
+            '포토': 'PROC_PH',
+            '포토리소그래피': 'PROC_PH',
+            '에칭': 'PROC_ET',
+            '화학증착': 'PROC_TF',
+            '확산': 'PROC_DF',
+            '화학기계연마': 'PROC_CM',
+            '이온주입': 'PROC_IMP',
+            '세정': 'PROC_CLN',
+            '계측': 'PROC_MI',
+        }
+        
+        for korean, process_id in korean_process_map.items():
+            if korean in text:
+                return process_id
+        
+        # 영문 패턴 매칭
         for pattern in self.PROCESS_PATTERNS:
             match = re.search(pattern, text_upper, re.IGNORECASE)
             if match:
