@@ -341,7 +341,7 @@ EOF
 #### 기본 설정
 - **Method**: `POST`
 - **URL**: 
-  - 로컬 테스트: `http://localhost:8001/ask`
+  - 로컬 테스트: `http://localhost:8000/ask`
   - 배포 환경: `https://your-domain.com/ask` (실제 배포 주소로 변경)
 
 #### Headers 설정
@@ -368,7 +368,7 @@ Content-Type: application/json
 ### 테스트 예시
 
 ```bash
-curl -X POST http://localhost:8001/ask \
+curl -X POST http://localhost:8000/ask \
   -H "Content-Type: application/json" \
   -d '{
     "question": "시스템 상태를 알려줘",
@@ -398,10 +398,10 @@ ngrok config add-authtoken <여기에_복사한_authtoken_붙여넣기>
 
 ### 4. ngrok 실행하기
 
-로컬 서버(포트 8001)를 외부에 노출:
+로컬 서버(포트 8000)를 외부에 노출:
 ```bash
 export PATH="$HOME/bin:$PATH"
-ngrok http 8001
+ngrok http 8000
 ```
 
 실행하면 `Forwarding` 줄에 있는 주소를 복사하여 Dify HTTP 노드의 URL로 사용하세요.
