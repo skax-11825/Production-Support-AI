@@ -1,0 +1,254 @@
+"""
+질문 분석 모듈
+사용자 질문에서 공정정보를 추출하고 특정 가능 여부를 판단합니다.
+"""
+import re
+import logging
+from typing import Dict, Optional, Tuple
+from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ProcessInfo:
+    """공정정보 데이터 클래스"""
+    site_id: Optional[str] = None
+    factory_id: Optional[str] = None
+    process_id: Optional[str] = None
+    model_id: Optional[str] = None
+    down_type: Optional[str] = None  # SCHEDULED, UNSCHEDULED
+    down_time_minutes: Optional[float] = None  # 분 단위
+    
+    def is_specific(self) -> bool:
+        """공정정보가 특정 가능한지 확인"""
+        # 최소한 하나의 필터 조건이 있어야 함
+        return any([
+            self.site_id,
+            self.factory_id,
+            self.process_id,
+            self.model_id,
+            self.down_type,
+            self.down_time_minutes is not None
+        ])
+    
+    def to_dict(self) -> Dict:
+        """딕셔너리로 변환"""
+        return {
+            'site_id': self.site_id,
+            'factory_id': self.factory_id,
+            'process_id': self.process_id,
+            'model_id': self.model_id,
+            'down_type': self.down_type,
+            'down_time_minutes': self.down_time_minutes
+        }
+
+
+class QuestionAnalyzer:
+    """질문 분석 클래스"""
+    
+    # 사이트 ID 패턴 (ICH, CJU, WUX 등)
+    SITE_PATTERNS = [
+        r'\b(ICH|이천)\b',
+        r'\b(CJU|청주)\b',
+        r'\b(WUX|우시)\b',
+        r'\b사이트[:\s]*([A-Z]{2,4})\b',
+        r'\b(site|Site)[:\s]*([A-Z]{2,4})\b',
+    ]
+    
+    # 공장 ID 패턴 (FAB1, FAB2 등)
+    FACTORY_PATTERNS = [
+        r'\b(FAB\d+|FAB\s*\d+)\b',
+        r'\b공장[:\s]*([A-Z0-9]+)\b',
+        r'\b(factory|Factory)[:\s]*([A-Z0-9]+)\b',
+    ]
+    
+    # 공정 ID 패턴
+    PROCESS_PATTERNS = [
+        r'\b(PHOTO|포토|포토리소그래피)\b',
+        r'\b(ETCH|에칭)\b',
+        r'\b(CVD|화학증착)\b',
+        r'\b(PVD|물리증착)\b',
+        r'\b(CMP|화학기계연마)\b',
+        r'\b(IMPLANT|이온주입)\b',
+        r'\b공정[:\s]*([A-Z]+)\b',
+        r'\b(process|Process)[:\s]*([A-Z]+)\b',
+    ]
+    
+    # 모델 ID 패턴
+    MODEL_PATTERNS = [
+        r'\b(MODEL[-\s]?[A-Z]|모델[-\s]?[A-Z])\b',
+        r'\b(model|Model)[:\s]*([A-Z0-9-]+)\b',
+    ]
+    
+    # 다운타임 유형 패턴
+    DOWN_TYPE_PATTERNS = [
+        (r'\b(계획|스케줄|SCHEDULED|scheduled)\b', 'SCHEDULED'),
+        (r'\b(비계획|비스케줄|UNSCHEDULED|unscheduled)\b', 'UNSCHEDULED'),
+        (r'\b(계획된|스케줄된)\b', 'SCHEDULED'),
+        (r'\b(비계획된|예기치\s*않은)\b', 'UNSCHEDULED'),
+    ]
+    
+    # 시간 패턴 (분 단위)
+    TIME_PATTERNS = [
+        (r'(\d+(?:\.\d+)?)\s*분', 1),  # N분
+        (r'(\d+(?:\.\d+)?)\s*시간', 60),  # N시간 -> 분 변환
+        (r'(\d+(?:\.\d+)?)\s*h(?:our)?s?', 60),  # Nh
+        (r'(\d+(?:\.\d+)?)\s*m(?:in)?s?', 1),  # Nm
+        (r'(\d+(?:\.\d+)?)\s*시간\s*(\d+(?:\.\d+)?)\s*분', None),  # N시간 M분
+    ]
+    
+    def __init__(self):
+        """초기화"""
+        pass
+    
+    def analyze(self, question: str) -> Tuple[ProcessInfo, bool]:
+        """
+        질문을 분석하여 공정정보를 추출하고 특정 가능 여부를 반환
+        
+        Returns:
+            (ProcessInfo, is_specific): 공정정보와 특정 가능 여부
+        """
+        logger.info(f"[질문 분석] 시작: '{question}'")
+        
+        process_info = ProcessInfo()
+        
+        # 사이트 ID 추출
+        site_id = self._extract_site_id(question)
+        if site_id:
+            process_info.site_id = site_id
+            logger.info(f"[질문 분석] 사이트 ID 추출: {site_id}")
+        
+        # 공장 ID 추출
+        factory_id = self._extract_factory_id(question)
+        if factory_id:
+            process_info.factory_id = factory_id
+            logger.info(f"[질문 분석] 공장 ID 추출: {factory_id}")
+        
+        # 공정 ID 추출
+        process_id = self._extract_process_id(question)
+        if process_id:
+            process_info.process_id = process_id
+            logger.info(f"[질문 분석] 공정 ID 추출: {process_id}")
+        
+        # 모델 ID 추출
+        model_id = self._extract_model_id(question)
+        if model_id:
+            process_info.model_id = model_id
+            logger.info(f"[질문 분석] 모델 ID 추출: {model_id}")
+        
+        # 다운타임 유형 추출
+        down_type = self._extract_down_type(question)
+        if down_type:
+            process_info.down_type = down_type
+            logger.info(f"[질문 분석] 다운타임 유형 추출: {down_type}")
+        
+        # 다운타임 시간 추출
+        down_time = self._extract_down_time(question)
+        if down_time is not None:
+            process_info.down_time_minutes = down_time
+            logger.info(f"[질문 분석] 다운타임 시간 추출: {down_time}분")
+        
+        # 특정 가능 여부 판단
+        is_specific = process_info.is_specific()
+        
+        logger.info(f"[질문 분석] 완료 - 특정 가능: {is_specific}")
+        logger.info(f"[질문 분석] 추출된 정보: {process_info.to_dict()}")
+        
+        return process_info, is_specific
+    
+    def _extract_site_id(self, text: str) -> Optional[str]:
+        """사이트 ID 추출"""
+        text_upper = text.upper()
+        
+        for pattern in self.SITE_PATTERNS:
+            match = re.search(pattern, text_upper, re.IGNORECASE)
+            if match:
+                # 그룹이 있으면 그룹 값, 없으면 전체 매치
+                site = match.group(1) if match.groups() else match.group(0)
+                # 알파벳만 추출
+                site = re.sub(r'[^A-Z]', '', site)
+                if site:
+                    return site
+        
+        return None
+    
+    def _extract_factory_id(self, text: str) -> Optional[str]:
+        """공장 ID 추출"""
+        text_upper = text.upper()
+        
+        for pattern in self.FACTORY_PATTERNS:
+            match = re.search(pattern, text_upper, re.IGNORECASE)
+            if match:
+                factory = match.group(1) if match.groups() else match.group(0)
+                # FAB 숫자 정규화
+                factory = re.sub(r'FAB\s*(\d+)', r'FAB\1', factory, flags=re.IGNORECASE)
+                if factory:
+                    return factory
+        
+        return None
+    
+    def _extract_process_id(self, text: str) -> Optional[str]:
+        """공정 ID 추출"""
+        text_upper = text.upper()
+        
+        for pattern in self.PROCESS_PATTERNS:
+            match = re.search(pattern, text_upper, re.IGNORECASE)
+            if match:
+                process = match.group(1) if match.groups() else match.group(0)
+                # 알파벳만 추출
+                process = re.sub(r'[^A-Z]', '', process)
+                if process:
+                    return process
+        
+        return None
+    
+    def _extract_model_id(self, text: str) -> Optional[str]:
+        """모델 ID 추출"""
+        text_upper = text.upper()
+        
+        for pattern in self.MODEL_PATTERNS:
+            match = re.search(pattern, text_upper, re.IGNORECASE)
+            if match:
+                model = match.group(1) if match.groups() else match.group(0)
+                # MODEL- 제거하고 정리
+                model = re.sub(r'MODEL[-\s]*', '', model, flags=re.IGNORECASE)
+                if model:
+                    return f"MODEL-{model}" if not model.startswith("MODEL") else model
+        
+        return None
+    
+    def _extract_down_type(self, text: str) -> Optional[str]:
+        """다운타임 유형 추출"""
+        text_upper = text.upper()
+        
+        for pattern, down_type in self.DOWN_TYPE_PATTERNS:
+            if re.search(pattern, text_upper, re.IGNORECASE):
+                return down_type
+        
+        return None
+    
+    def _extract_down_time(self, text: str) -> Optional[float]:
+        """다운타임 시간 추출 (분 단위)"""
+        # N시간 M분 패턴 먼저 처리
+        time_match = re.search(r'(\d+(?:\.\d+)?)\s*시간\s*(\d+(?:\.\d+)?)\s*분', text, re.IGNORECASE)
+        if time_match:
+            hours = float(time_match.group(1))
+            minutes = float(time_match.group(2))
+            return hours * 60 + minutes
+        
+        # 단일 시간 단위 패턴
+        for pattern, multiplier in self.TIME_PATTERNS:
+            if multiplier is None:  # 이미 처리된 패턴
+                continue
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                value = float(match.group(1))
+                return value * multiplier
+        
+        return None
+
+
+# 전역 인스턴스
+question_analyzer = QuestionAnalyzer()
+
