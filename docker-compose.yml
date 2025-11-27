@@ -1,0 +1,20 @@
+version: "3.8"
+
+services:
+  question-answer-api:
+    build: .
+    container_name: question-answer-api
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+    env_file:
+      - .env
+    restart: unless-stopped
+    networks:
+      - default
+
+networks:
+  default:
+    driver: bridge
+

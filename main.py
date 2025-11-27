@@ -2,11 +2,12 @@
 질문-답변 API 서버
 FastAPI를 사용한 REST API 엔드포인트
 """
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
 import logging
+import json
 from database import db
 from config import settings
 from dify_client import (
@@ -42,7 +43,7 @@ app.add_middleware(
 # 요청/응답 모델
 class QuestionRequest(BaseModel):
     """질문 요청 모델"""
-    question: str
+    question: Optional[str] = ""
     context: Optional[str] = None  # 추가 컨텍스트 정보 (선택사항)
 
 
@@ -103,27 +104,50 @@ async def health_check():
 
 
 @app.post("/ask", response_model=AnswerResponse, tags=["질문-답변"])
-async def ask_question(request: QuestionRequest):
+async def ask_question(request: QuestionRequest, http_request: Request):
     """
     질문을 받고 답변을 제공하는 엔드포인트
     
-    - **question**: 사용자의 질문
+    Dify 워크플로우에서 HTTP Request 노드를 통해 호출됩니다.
+    
+    - **question**: 사용자의 질문 (Dify에서 전달된 input 변수)
     - **context**: 추가 컨텍스트 정보 (선택사항)
     """
     try:
-        question = request.question.strip()
+        # 1단계: 요청 정보 로깅
+        logger.info("=" * 80)
+        logger.info("[Dify 워크플로우 요청 수신]")
+        logger.info(f"요청 URL: {http_request.url}")
+        logger.info(f"요청 Method: {http_request.method}")
         
+        # 원본 요청 본문 로깅
+        try:
+            body = await http_request.body()
+            body_str = body.decode('utf-8') if body else 'empty'
+            logger.info(f"원본 요청 Body: {body_str}")
+        except Exception as e:
+            logger.warning(f"요청 Body 읽기 실패: {e}")
+        
+        # 파싱된 요청 정보
+        question = request.question.strip() if request.question else ""
+        context = request.context.strip() if request.context else None
+        
+        logger.info(f"파싱된 질문: {question}")
+        logger.info(f"파싱된 컨텍스트: {context}")
+        
+        # 2단계: 입력 검증
         if not question:
+            logger.error("[오류] 질문이 비어있습니다.")
+            logger.error(f"요청 전체 내용: {request.model_dump()}")
             raise HTTPException(status_code=400, detail="질문이 비어있습니다.")
         
-        logger.info(f"질문 수신: {question}")
+        # 3단계: 답변 생성 시작
+        logger.info(f"[답변 생성 시작] 질문: '{question}'")
+        answer = await generate_answer(question, context)
         
-        # 데이터베이스에서 관련 정보 조회 (예시)
-        # 실제 구현에서는 데이터베이스에서 관련 정보를 검색하거나
-        # AI 모델을 사용하여 답변을 생성할 수 있습니다.
-        
-        # 간단한 예시: 데이터베이스에서 질문과 관련된 정보를 조회
-        answer = await generate_answer(question, request.context)
+        # 4단계: 응답 반환
+        logger.info(f"[답변 생성 완료] 답변 길이: {len(answer)} 문자")
+        logger.info("=" * 80)
         
         return AnswerResponse(
             question=question,
@@ -132,9 +156,16 @@ async def ask_question(request: QuestionRequest):
         )
     
     except HTTPException:
+        # HTTP 예외는 그대로 전달
         raise
     except Exception as e:
-        logger.error(f"질문 처리 중 오류 발생: {e}")
+        # 예상치 못한 오류 처리
+        logger.error("=" * 80)
+        logger.error(f"[치명적 오류] 질문 처리 중 예외 발생")
+        logger.error(f"오류 메시지: {str(e)}")
+        logger.error(f"오류 타입: {type(e).__name__}")
+        logger.error(f"요청 정보: {request.model_dump() if hasattr(request, 'model_dump') else str(request)}")
+        logger.error("=" * 80, exc_info=True)
         raise HTTPException(status_code=500, detail=f"서버 오류: {str(e)}")
 
 
@@ -142,19 +173,43 @@ async def generate_answer(question: str, context: Optional[str] = None) -> str:
     """
     질문에 대한 답변 생성
     
-    현재는 간단한 예시 구현입니다.
-    실제로는 데이터베이스에서 정보를 검색하거나 AI 모델을 사용할 수 있습니다.
+    처리 순서:
+    1. Dify API 호출 (설정된 경우)
+    2. Oracle DB 기반 답변 생성 (Dify 실패 시 또는 Dify 미설정 시)
     """
-    # 1) Dify 연동이 구성된 경우 우선 호출
+    logger.info(f"[답변 생성] 시작 - 질문: '{question[:50]}...' (전체 길이: {len(question)})")
+    
+    # 1단계: Dify API 호출 시도
     if is_dify_enabled():
+        logger.info("[Dify API 호출] Dify 연동이 활성화되어 있습니다.")
+        logger.info(f"[Dify API 호출] Dify API Base: {settings.DIFY_API_BASE}")
         try:
-            return await request_answer(question, context)
+            logger.info("[Dify API 호출] Dify API로 답변 요청 중...")
+            answer = await request_answer(question, context)
+            logger.info(f"[Dify API 호출] 성공! 답변 길이: {len(answer)} 문자")
+            logger.info(f"[Dify API 호출] 답변 미리보기: {answer[:100]}...")
+            return answer
         except DifyClientError as exc:
-            logger.error("Dify 호출 실패, DB 로직으로 대체합니다: %s", exc)
+            logger.warning(f"[Dify API 호출] 실패: {exc}")
+            logger.info("[Dify API 호출] Oracle DB 로직으로 대체합니다.")
+        except Exception as exc:
+            logger.error(f"[Dify API 호출] 예상치 못한 오류: {exc}", exc_info=True)
+            logger.info("[Dify API 호출] Oracle DB 로직으로 대체합니다.")
+    else:
+        logger.info("[Dify API 호출] Dify 연동이 비활성화되어 있습니다.")
+        logger.info("[Dify API 호출] Oracle DB 로직을 사용합니다.")
 
-    # 2) Oracle DB 기반 기본 답변 로직
+    # 2단계: Oracle DB 기반 답변 생성 (Dify 실패 시 또는 Dify 미설정 시)
+    logger.info("[Oracle DB] 데이터베이스 기반 답변 생성 시작")
     try:
-        # 데이터베이스에서 관련 정보 조회 예시
+        # 데이터베이스 연결 확인
+        if not db.test_connection():
+            logger.error("[Oracle DB] 데이터베이스 연결 실패")
+            return "데이터베이스에 연결할 수 없습니다. 시스템 관리자에게 문의하세요."
+        
+        logger.info("[Oracle DB] 데이터베이스 연결 성공")
+        
+        # 데이터베이스에서 관련 정보 조회
         with db.get_connection() as conn:
             cursor = conn.cursor()
             
@@ -164,17 +219,24 @@ async def generate_answer(question: str, context: Optional[str] = None) -> str:
             result = cursor.fetchone()
             cursor.close()
             
+            logger.info(f"[Oracle DB] 데이터 조회 완료: {result}")
+            
             # 간단한 답변 생성 (실제로는 더 복잡한 로직 필요)
             if "시간" in question or "날짜" in question:
-                return f"현재 데이터베이스 시간: {result[0] if result else '알 수 없음'}"
+                answer = f"현재 데이터베이스 시간: {result[0] if result else '알 수 없음'}"
             elif "연결" in question or "상태" in question:
-                return "데이터베이스 연결이 정상적으로 작동하고 있습니다."
+                answer = "데이터베이스 연결이 정상적으로 작동하고 있습니다."
             else:
-                return f"질문 '{question}'에 대한 답변을 생성했습니다. (데이터베이스 연결 확인됨)"
+                answer = f"질문 '{question}'에 대한 답변을 생성했습니다. (데이터베이스 연결 확인됨)"
+            
+            logger.info(f"[Oracle DB] 답변 생성 완료: {answer[:100]}...")
+            return answer
     
     except Exception as e:
-        logger.error(f"답변 생성 중 오류: {e}")
-        return f"질문을 처리하는 중 오류가 발생했습니다: {str(e)}"
+        logger.error(f"[Oracle DB] 답변 생성 중 오류: {e}", exc_info=True)
+        error_msg = f"질문을 처리하는 중 오류가 발생했습니다: {str(e)}"
+        logger.error(f"[Oracle DB] 오류 메시지 반환: {error_msg}")
+        return error_msg
 
 
 if __name__ == "__main__":
