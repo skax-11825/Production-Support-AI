@@ -34,6 +34,7 @@ def split_sql_statements(sql_content):
     statements = []
     current_statement = []
     
+    inside_plsql = False
     for line in sql_content.split('\n'):
         line = line.strip()
         
@@ -44,14 +45,28 @@ def split_sql_statements(sql_content):
         # 주석 제거 (라인 내 주석)
         if '--' in line:
             line = line[:line.index('--')].strip()
+        upper_line = line.upper()
+
+        if upper_line.startswith('CREATE OR REPLACE TRIGGER') or upper_line.startswith('CREATE TRIGGER'):
+            inside_plsql = True
         
         if line:
             current_statement.append(line)
             
-            # 세미콜론으로 문장 종료 확인
+            # PL/SQL 블록은 END; 까지 하나의 문장으로 취급
+            if inside_plsql:
+                if upper_line.startswith('END'):
+                    statement = ' '.join(current_statement)
+                    statement = statement.rstrip(';').rstrip('/').strip()
+                    if statement:
+                        statements.append(statement)
+                    current_statement = []
+                    inside_plsql = False
+                continue
+            
+            # 일반 SQL 문장의 종료 여부 확인
             if line.endswith(';') or line.endswith('/'):
                 statement = ' '.join(current_statement)
-                # 세미콜론이나 슬래시 제거
                 statement = statement.rstrip(';').rstrip('/').strip()
                 if statement:
                     statements.append(statement)
@@ -97,11 +112,12 @@ def execute_sql_file(file_path, drop_existing=False):
             # 기존 테이블 삭제 (옵션)
             if drop_existing:
                 logger.info("기존 테이블 삭제 중...")
-                try:
-                    cursor.execute("DROP TABLE INFORMNOTE_TABLE CASCADE CONSTRAINTS")
-                    logger.info("✓ 기존 테이블 삭제 완료")
-                except Exception as e:
-                    logger.warning(f"기존 테이블 삭제 실패 (테이블이 없을 수 있음): {e}")
+                for table_name in ["INFORM_NOTE", "INFORMNOTE_TABLE"]:
+                    try:
+                        cursor.execute(f"DROP TABLE {table_name} CASCADE CONSTRAINTS")
+                        logger.info(f"✓ 기존 테이블 삭제 완료: {table_name}")
+                    except Exception as e:
+                        logger.warning(f"{table_name} 삭제 실패 (없을 수 있음): {e}")
             
             # SQL 문 실행
             success_count = 0
@@ -142,7 +158,7 @@ def execute_sql_file(file_path, drop_existing=False):
                     num_rows,
                     TO_CHAR(last_analyzed, 'YYYY-MM-DD HH24:MI:SS') as last_analyzed
                 FROM user_tables
-                WHERE table_name = 'INFORMNOTE_TABLE'
+                WHERE table_name = 'INFORM_NOTE'
             """)
             result = cursor.fetchone()
             
@@ -159,7 +175,7 @@ def execute_sql_file(file_path, drop_existing=False):
                     index_name,
                     COUNT(*) as column_count
                 FROM user_ind_columns
-                WHERE table_name = 'INFORMNOTE_TABLE'
+                WHERE table_name = 'INFORM_NOTE'
                 GROUP BY index_name
                 ORDER BY index_name
             """)
@@ -198,7 +214,7 @@ def verify_table_structure():
                     nullable,
                     data_default
                 FROM user_tab_columns
-                WHERE table_name = 'INFORMNOTE_TABLE'
+                WHERE table_name = 'INFORM_NOTE'
                 ORDER BY column_id
             """)
             columns = cursor.fetchall()
@@ -216,7 +232,7 @@ def verify_table_structure():
                     constraint_name,
                     constraint_type
                 FROM user_constraints
-                WHERE table_name = 'INFORMNOTE_TABLE'
+                WHERE table_name = 'INFORM_NOTE'
                 ORDER BY constraint_type, constraint_name
             """)
             constraints = cursor.fetchall()

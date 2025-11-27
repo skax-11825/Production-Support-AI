@@ -173,6 +173,7 @@ def generate_inform_note(index: int, start_date: datetime, end_date: datetime) -
         'operator': operator,
         'first_detector': first_detector,
         'status_id': status_id,
+        'link': f"https://dummy.reference/{index + 1}",
     }
 
 
@@ -190,14 +191,14 @@ def insert_data_to_oracle(data_list: List[Dict[str, Any]]) -> tuple[int, int]:
             cursor = conn.cursor()
             
             insert_sql = """
-                INSERT INTO INFORMNOTE_TABLE (
+                INSERT INTO INFORM_NOTE (
                     informnote_id, site_id, factory_id, line_id, process_id,
                     eqp_id, model_id, down_start_time, down_end_time, down_time_minutes,
                     down_type, error_code, act_prob_reason, act_content,
-                    act_start_time, act_end_time, operator, first_detector, status_id
+                    act_start_time, act_end_time, operator, first_detector, status_id, link
                 ) VALUES (
                     :1, :2, :3, :4, :5, :6, :7, :8, :9, :10,
-                    :11, :12, :13, :14, :15, :16, :17, :18, :19
+                    :11, :12, :13, :14, :15, :16, :17, :18, :19, :20
                 )
             """
             
@@ -226,6 +227,7 @@ def insert_data_to_oracle(data_list: List[Dict[str, Any]]) -> tuple[int, int]:
                         data['operator'],
                         data['first_detector'],
                         data['status_id'],
+                        data['link'],
                     ))
                     success_count += 1
                     
@@ -289,7 +291,7 @@ def main():
         try:
             with db.get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute('SELECT COUNT(*) FROM INFORMNOTE_TABLE')
+                cursor.execute('SELECT COUNT(*) FROM INFORM_NOTE')
                 total = cursor.fetchone()[0]
                 print(f"✓ 현재 테이블 총 행 수: {total}")
                 
@@ -297,7 +299,7 @@ def main():
                 cursor.execute('''
                     SELECT site_id, COUNT(*) as cnt, 
                            ROUND(SUM(down_time_minutes)/60, 2) as total_hours
-                    FROM INFORMNOTE_TABLE
+                    FROM INFORM_NOTE
                     GROUP BY site_id
                     ORDER BY site_id
                 ''')

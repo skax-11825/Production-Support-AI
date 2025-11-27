@@ -164,7 +164,7 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
      - 결과 제한 및 포맷팅
 
 5. **Oracle Database**
-   - 테이블: `INFORMNOTE_TABLE`
+   - 테이블: `Inform_note`
    - 역할: 반도체 공정 다운타임 데이터 저장 및 조회
 
 ### 처리 흐름
@@ -330,6 +330,18 @@ SELECT name FROM v\$pdbs;
 EXIT;
 EOF
 ```
+
+### Docker로 전체 파이프라인 자동 실행
+
+`docker-entrypoint.sh`가 Oracle 초기화 스크립트(`scripts/bootstrap_db.sh`)를 자동으로 호출하므로, 아래 한 줄로 전체 스키마/데이터 적재와 FastAPI 서버 실행을 동시에 진행할 수 있습니다.
+
+```bash
+docker compose up --build
+```
+
+- 컨테이너 내부에서는 `setup_reference_tables.py → load_reference_data.py → setup_semicon_term_dict.py → load_semicon_term_dict.py → setup_informnote_table.py → load_inform_note_from_excel.py` 순으로 실행됩니다.
+- 로컬에서 이미 데이터를 채워두었고 Docker 기동 시 부트스트랩을 건너뛰고 싶다면 `SKIP_DB_BOOTSTRAP=1 docker compose up` 형태로 실행하세요.
+- 컨테이너에서 macOS/Windows 호스트의 Oracle을 바라볼 수 있도록 `docker-compose.yml`은 기본 DSN을 `host.docker.internal:1521/FREEPDB1`로 오버라이드합니다. 필요하면 `.env` 또는 Compose 환경변수를 수정해 주세요.
 
 ## Dify 연동 설정
 

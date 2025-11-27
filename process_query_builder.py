@@ -53,7 +53,7 @@ class ProcessQueryBuilder:
                 first_detector,
                 status_id,
                 created_at
-            FROM INFORMNOTE_TABLE
+            FROM INFORM_NOTE
         """
         
         # WHERE 절 생성
@@ -230,7 +230,7 @@ class ProcessQueryBuilder:
                         COUNT(CASE WHEN down_type = 'UNSCHEDULED' THEN 1 END) as unscheduled_count,
                         COUNT(CASE WHEN status_id = 'COMPLETED' THEN 1 END) as completed_count,
                         COUNT(CASE WHEN status_id = 'IN_PROGRESS' THEN 1 END) as in_progress_count
-                    FROM INFORMNOTE_TABLE
+                    FROM INFORM_NOTE
                     {where_clause}
                 """
                 
