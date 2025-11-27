@@ -27,8 +27,11 @@ ENV/
 *.sqlite
 
 # Generated files
-*_queries.sql
 *.log
+
+# Large files
+*.tgz
+*.tar.gz
 
 # OS
 .DS_Store

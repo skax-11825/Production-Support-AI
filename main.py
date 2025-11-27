@@ -3,18 +3,18 @@
 FastAPI를 사용한 REST API 엔드포인트
 
 전체 흐름:
-1. Dify 워크플로우 → HTTP Request 노드 → 백엔드 서버 (/ask)
-2. 백엔드에서 질문 분석 및 공정정보 추출
-3. Oracle DB 쿼리 실행 (공정정보 특정 가능한 경우)
-4. 결과를 Dify에 반환 (answer 필드)
-5. Dify가 최종 답변 생성
+1. 사용자 질문 → Dify LLM이 내용 분류
+2. Dify 워크플로우 → HTTP Request 노드 → 백엔드 서버 (/ask)
+3. 백엔드에서 질문 분석 및 공정정보 추출
+4. Oracle DB 쿼리 실행 (DB 정보가 필요한 경우)
+5. 결과를 Dify에 반환 (answer 필드)
+6. Dify가 최종 답변 생성
 """
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Optional, Tuple
 import logging
-import json
 from database import db
 from config import settings
 from dify_client import (
@@ -120,13 +120,15 @@ async def ask_question(request: QuestionRequest, http_request: Request):
     질문을 받고 답변을 제공하는 엔드포인트
     
     Dify 워크플로우에서 HTTP Request 노드를 통해 호출됩니다.
+    Dify LLM이 질문을 분류한 후, DB 정보가 필요한 경우 백엔드로 전송됩니다.
     
     전체 흐름:
-    1. Dify → HTTP Request → 백엔드 서버 (/ask)
-    2. 백엔드에서 질문 분석 및 공정정보 추출
-    3. Oracle DB 쿼리 실행 (공정정보 특정 가능한 경우)
-    4. 결과를 Dify에 반환 (answer 필드)
-    5. Dify가 최종 답변 생성
+    1. 사용자 질문 → Dify LLM이 내용 분류
+    2. Dify → HTTP Request → 백엔드 서버 (/ask)
+    3. 백엔드에서 질문 분석 및 공정정보 추출
+    4. Oracle DB 쿼리 실행 (DB 정보가 필요한 경우)
+    5. 결과를 Dify에 반환 (answer 필드)
+    6. Dify가 최종 답변 생성
     
     Request Body:
     - question: 사용자의 질문 (Dify input 변수, 필수)
@@ -162,21 +164,30 @@ async def ask_question(request: QuestionRequest, http_request: Request):
                 detail="질문이 비어있습니다. 'question' 필드는 필수입니다."
             )
         
-        # 3단계: 질문 분석 및 답변 생성
+        # 3단계: DB 조회 필요 여부 판단 및 질문 분석
         logger.info(f"[답변 생성 시작] 질문: '{question[:100]}...'")
         
         # 질문 분석: 공정정보 추출 및 특정 가능 여부 판단
         process_info, is_specific = question_analyzer.analyze(question)
         
-        data_count = None
+        logger.info(f"[질문 분석 결과] 공정정보 특정 가능: {is_specific}")
         if is_specific:
-            logger.info("[공정정보 특정 가능] Oracle DB 쿼리 기반 답변 생성")
+            logger.info(f"[질문 분석 결과] 추출된 정보: {process_info.to_dict()}")
+        
+        data_count = None
+        
+        # 4단계: DB 조회 필요 여부에 따른 분기 처리
+        if is_specific:
+            # DB 조회 필요 + 공정정보 인식됨 → Oracle DB 쿼리 실행
+            logger.info("[처리 경로] 공정정보 특정 가능 → Oracle DB 쿼리 실행")
             answer, data_count = await generate_answer_with_process_info(
                 question, process_info, context
             )
         else:
-            logger.info("[공정정보 특정 불가] 일반 답변 생성 (Dify 또는 기본 답변)")
+            # DB 조회 불필요 또는 공정정보 인식 안 됨 → Dify로 전달
+            logger.info("[처리 경로] 공정정보 특정 불가 → Dify로 전달")
             answer = await generate_answer(question, context)
+            data_count = None
         
         # 4단계: 응답 반환 (Dify로 전달)
         logger.info(f"[답변 생성 완료] 답변 길이: {len(answer)} 문자")
@@ -392,11 +403,12 @@ async def generate_answer(question: str, context: Optional[str] = None) -> str:
     1. Dify API 호출 시도 (설정된 경우) - Dify 워크플로우에서 최종 답변 생성
     2. Dify 실패 시 기본 답변 반환
     
-    Note: 공정정보를 특정할 수 없는 일반 질문은 Dify 워크플로우에서 처리하는 것이 좋습니다.
+    Note: 공정정보를 특정할 수 없는 일반 질문은 Dify로 전달하여 처리합니다.
     """
     logger.info(f"[일반 답변 생성] 시작 - 질문: '{question[:100]}...'")
+    logger.info("[처리 경로] 공정정보 인식 안 됨 → Dify로 전달")
     
-    # 1단계: Dify API 호출 시도 (Dify 워크플로우에서 최종 처리)
+    # Dify API 호출 시도 (Dify 워크플로우에서 최종 처리)
     if is_dify_enabled():
         logger.info("[일반 답변] Dify API 호출 시도")
         logger.info(f"[일반 답변] Dify API Base: {settings.DIFY_API_BASE}")
@@ -414,7 +426,7 @@ async def generate_answer(question: str, context: Optional[str] = None) -> str:
     else:
         logger.info("[일반 답변] Dify 연동이 비활성화되어 있습니다.")
 
-    # 2단계: 기본 답변 생성 (Dify 실패 시 또는 Dify 미설정 시)
+    # 기본 답변 생성 (Dify 실패 시 또는 Dify 미설정 시)
     logger.info("[일반 답변] 기본 답변 생성")
     
     # 데이터베이스 연결 확인
@@ -427,9 +439,9 @@ async def generate_answer(question: str, context: Optional[str] = None) -> str:
             "더 구체적인 정보(사이트, 공장, 공정, 장비 등)를 포함해 주시면 "
             "정확한 다운타임 정보를 조회할 수 있습니다.\n\n"
             "예시:\n"
-            "- 'ICH 사이트의 FAB1에서 PHOTO 공정 다운타임 알려줘'\n"
+            "- 'ICH 사이트의 FAC_M16 공장에서 PROC_PH 공정 다운타임 알려줘'\n"
             "- '비계획 다운타임 2시간 이상인 경우 조회'\n"
-            "- 'MODEL-A 장비의 SCHEDULED 다운타임 통계'"
+            "- 'MDL_KE_PRO 모델의 SCHEDULED 다운타임 통계'"
         )
     else:
         answer = (

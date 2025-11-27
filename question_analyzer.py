@@ -81,8 +81,10 @@ class QuestionAnalyzer:
     
     # 모델 ID 패턴
     MODEL_PATTERNS = [
+        r'\b(MDL[_\-][A-Z0-9_]+)\b',  # MDL_KE_PRO, MDL-KE-LITE 등
+        r'\b(MODEL[_\-][A-Z0-9_]+)\b',  # MODEL-KE-PRO 등
         r'\b(MODEL[-\s]?[A-Z]|모델[-\s]?[A-Z])\b',
-        r'\b(model|Model)[:\s]*([A-Z0-9-]+)\b',
+        r'\b(model|Model)[:\s]*([A-Z0-9_-]+)\b',
     ]
     
     # 다운타임 유형 패턴
@@ -257,10 +259,17 @@ class QuestionAnalyzer:
             match = re.search(pattern, text_upper, re.IGNORECASE)
             if match:
                 model = match.group(1) if match.groups() else match.group(0)
-                # MODEL- 제거하고 정리
+                # MDL_ 형식인 경우 그대로 사용
+                if model.startswith('MDL_'):
+                    return model
+                # MODEL- 형식인 경우 MODEL- 제거하고 정리
                 model = re.sub(r'MODEL[-\s]*', '', model, flags=re.IGNORECASE)
                 if model:
-                    return f"MODEL-{model}" if not model.startswith("MODEL") else model
+                    # MDL_KE_PRO 형식으로 변환
+                    if '_' in model:
+                        return model
+                    # MDL-KE-PRO 형식으로 변환
+                    return f"MDL_{model.replace('-', '_')}" if '-' in model else f"MDL_{model}"
         
         return None
     

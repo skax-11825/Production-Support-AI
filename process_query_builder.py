@@ -113,7 +113,7 @@ class ProcessQueryBuilder:
         
         return query, bind_params
     
-    def execute_query(self, query: str, bind_params: Dict[str, Any], limit: int = 100) -> List[Dict]:
+    def execute_query(self, query: str, bind_params: List[Any], limit: int = 100) -> List[Dict]:
         """
         쿼리 실행 및 결과 반환
         
@@ -248,9 +248,9 @@ class ProcessQueryBuilder:
                     value = row[i]
                     # 숫자를 float로 변환
                     if isinstance(value, (int, float)):
-                        stats[col] = float(value) if value is not None else 0
+                        stats[col.lower()] = float(value) if value is not None else 0
                     else:
-                        stats[col] = value
+                        stats[col.lower()] = value
                 
                 cursor.close()
                 
