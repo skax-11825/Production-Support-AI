@@ -13,7 +13,8 @@ FastAPI를 사용한 REST API 엔드포인트
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List, Dict
+from datetime import datetime
 import logging
 from database import db
 from config import settings
@@ -72,6 +73,32 @@ class HealthResponse(BaseModel):
     dify_enabled: bool
 
 
+class ErrorTypeStatsRequest(BaseModel):
+    """에러 타입 통계 요청 모델"""
+    down_start_time: str = Field(..., description="다운 시작 시간 (YYYY-MM-DD HH:MM:SS 형식, 필수)")
+    down_end_time: str = Field(..., description="다운 종료 시간 (YYYY-MM-DD HH:MM:SS 형식, 필수)")
+    site_id: Optional[str] = Field(None, description="사이트 ID (선택사항)")
+    factory_id: Optional[str] = Field(None, description="공장 ID (선택사항)")
+    line_id: Optional[str] = Field(None, description="라인 ID (선택사항)")
+    process_id: Optional[str] = Field(None, description="공정 ID (선택사항)")
+    model_id: Optional[str] = Field(None, description="모델 ID (선택사항)")
+    eqp_id: Optional[str] = Field(None, description="장비 ID (선택사항)")
+
+
+class ErrorTypeStatItem(BaseModel):
+    """에러 타입 통계 항목"""
+    error_type: Optional[str] = Field(None, description="에러 타입 (ERROR_CODE)")
+    down_cnt: int = Field(..., description="다운타임 건수")
+    total_down_time_minutes: float = Field(..., description="총 다운타임 시간 (분)")
+
+
+class ErrorTypeStatsResponse(BaseModel):
+    """에러 타입 통계 응답 모델"""
+    success: bool = Field(True, description="처리 성공 여부")
+    data: List[ErrorTypeStatItem] = Field(..., description="에러 타입별 통계 데이터")
+    total_count: int = Field(..., description="전체 에러 타입 종류 수")
+
+
 # 데이터베이스 연결 초기화
 @app.on_event("startup")
 async def startup_event():
@@ -112,6 +139,238 @@ async def health_check():
         database_connected=db_connected,
         dify_enabled=is_dify_enabled(),
     )
+
+
+@app.post("/case1/error-type-stats", response_model=ErrorTypeStatsResponse, tags=["통계"])
+async def get_error_type_stats(request: ErrorTypeStatsRequest):
+    """
+    에러 타입별 다운타임 통계 조회 엔드포인트
+    
+    공정/장비별 error type별 건수와 down time을 집계합니다.
+    
+    필수 파라미터:
+    - down_start_time: 다운 시작 시간 (YYYY-MM-DD HH:MM:SS)
+    - down_end_time: 다운 종료 시간 (YYYY-MM-DD HH:MM:SS)
+    
+    선택 파라미터:
+    - site_id: 사이트 ID
+    - factory_id: 공장 ID
+    - line_id: 라인 ID
+    - process_id: 공정 ID
+    - model_id: 모델 ID
+    - eqp_id: 장비 ID
+    
+    응답:
+    - error_type: 에러 타입 (ERROR_CODE)
+    - down_cnt: 다운타임 건수
+    - total_down_time_minutes: 총 다운타임 시간 (분)
+    """
+    logger.info("=" * 80)
+    logger.info("[에러 타입 통계 조회] 요청 수신")
+    logger.info(f"요청 파라미터: {request.dict()}")
+    
+    try:
+        # 시간 형식 검증
+        try:
+            start_time = datetime.strptime(request.down_start_time, "%Y-%m-%d %H:%M:%S")
+            end_time = datetime.strptime(request.down_end_time, "%Y-%m-%d %H:%M:%S")
+        except ValueError as e:
+            logger.error(f"[에러 타입 통계] 시간 형식 오류: {e}")
+            raise HTTPException(
+                status_code=400,
+                detail="시간 형식이 올바르지 않습니다. 'YYYY-MM-DD HH:MM:SS' 형식을 사용하세요."
+            )
+        
+        # 시작 시간이 종료 시간보다 늦으면 오류
+        if start_time > end_time:
+            raise HTTPException(
+                status_code=400,
+                detail="시작 시간이 종료 시간보다 늦을 수 없습니다."
+            )
+        
+        # 데이터베이스 연결 확인
+        if not db.test_connection():
+            logger.error("[에러 타입 통계] 데이터베이스 연결 실패")
+            raise HTTPException(
+                status_code=503,
+                detail="데이터베이스에 연결할 수 없습니다."
+            )
+        
+        # SQL 쿼리 생성 및 실행
+        query, bind_params = _build_error_type_stats_query(request)
+        logger.info(f"[에러 타입 통계] 쿼리 생성 완료")
+        logger.debug(f"[에러 타입 통계] 쿼리: {query}")
+        logger.debug(f"[에러 타입 통계] 바인드 파라미터: {bind_params}")
+        
+        # 쿼리 실행
+        results = _execute_error_type_stats_query(query, bind_params)
+        logger.info(f"[에러 타입 통계] 쿼리 실행 완료 - {len(results)}건 반환")
+        
+        # 응답 데이터 변환
+        stats_data = []
+        for row in results:
+            error_type = row.get('error_type') or row.get('ERROR_TYPE')
+            down_cnt = row.get('down_cnt') or row.get('DOWN_CNT') or 0
+            total_time = row.get('total_down_time_minutes') or row.get('TOTAL_DOWN_TIME_MINUTES') or 0.0
+            
+            stats_data.append(ErrorTypeStatItem(
+                error_type=error_type,
+                down_cnt=int(down_cnt),
+                total_down_time_minutes=float(total_time)
+            ))
+        
+        logger.info(f"[에러 타입 통계] 처리 완료 - {len(stats_data)}개 에러 타입")
+        
+        return ErrorTypeStatsResponse(
+            success=True,
+            data=stats_data,
+            total_count=len(stats_data)
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[에러 타입 통계] 오류 발생: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"에러 타입 통계 조회 중 오류가 발생했습니다: {str(e)}"
+        )
+
+
+def _build_error_type_stats_query(request: ErrorTypeStatsRequest) -> Tuple[str, List]:
+    """
+    에러 타입 통계 쿼리 생성
+    
+    Args:
+        request: 요청 모델
+    
+    Returns:
+        (SQL 쿼리 문자열, 바인드 파라미터 리스트)
+    """
+    # SELECT 절
+    select_clause = """
+        SELECT 
+            error_code as error_type,
+            COUNT(*) as down_cnt,
+            SUM(down_time_minutes) as total_down_time_minutes
+        FROM INFORM_NOTE
+    """
+    
+    # WHERE 절 생성
+    where_conditions = []
+    bind_params = []
+    param_index = 1
+    
+    # 필수 조건: 시간 범위
+    where_conditions.append(f"down_start_time >= TO_TIMESTAMP(:{param_index}, 'YYYY-MM-DD HH24:MI:SS')")
+    bind_params.append(request.down_start_time)
+    param_index += 1
+    
+    where_conditions.append(f"down_start_time <= TO_TIMESTAMP(:{param_index}, 'YYYY-MM-DD HH24:MI:SS')")
+    bind_params.append(request.down_end_time)
+    param_index += 1
+    
+    # 선택 조건들
+    if request.site_id:
+        where_conditions.append(f"site_id = :{param_index}")
+        bind_params.append(request.site_id)
+        param_index += 1
+    
+    if request.factory_id:
+        where_conditions.append(f"factory_id = :{param_index}")
+        bind_params.append(request.factory_id)
+        param_index += 1
+    
+    if request.line_id:
+        where_conditions.append(f"line_id = :{param_index}")
+        bind_params.append(request.line_id)
+        param_index += 1
+    
+    if request.process_id:
+        where_conditions.append(f"process_id = :{param_index}")
+        bind_params.append(request.process_id)
+        param_index += 1
+    
+    if request.model_id:
+        where_conditions.append(f"model_id = :{param_index}")
+        bind_params.append(request.model_id)
+        param_index += 1
+    
+    if request.eqp_id:
+        where_conditions.append(f"eqp_id = :{param_index}")
+        bind_params.append(request.eqp_id)
+        param_index += 1
+    
+    # ERROR_CODE가 NULL이 아닌 것만 조회
+    where_conditions.append("error_code IS NOT NULL")
+    
+    # WHERE 절 조합
+    where_clause = "WHERE " + " AND ".join(where_conditions)
+    
+    # GROUP BY 절
+    group_by_clause = "GROUP BY error_code"
+    
+    # ORDER BY 절 (건수 내림차순)
+    order_by_clause = "ORDER BY down_cnt DESC"
+    
+    # 최종 쿼리 조합
+    query = f"{select_clause.strip()} {where_clause} {group_by_clause} {order_by_clause}".strip()
+    query = " ".join(query.split())  # 중복 공백 제거
+    
+    return query, bind_params
+
+
+def _execute_error_type_stats_query(query: str, bind_params: List) -> List[Dict]:
+    """
+    에러 타입 통계 쿼리 실행
+    
+    Args:
+        query: SQL 쿼리
+        bind_params: 바인드 파라미터
+    
+    Returns:
+        쿼리 결과 리스트
+    """
+    logger.info(f"[에러 타입 통계 쿼리 실행] 시작")
+    
+    try:
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            # 쿼리 실행
+            if bind_params:
+                cursor.execute(query, bind_params)
+            else:
+                cursor.execute(query)
+            
+            # 컬럼명 가져오기
+            columns = [desc[0] for desc in cursor.description]
+            
+            # 결과 가져오기
+            rows = cursor.fetchall()
+            
+            # 딕셔너리 리스트로 변환 (대소문자 모두 지원)
+            results = []
+            for row in rows:
+                result_dict = {}
+                for i, col in enumerate(columns):
+                    value = row[i]
+                    # TIMESTAMP를 문자열로 변환
+                    if hasattr(value, 'strftime'):
+                        value = value.strftime('%Y-%m-%d %H:%M:%S')
+                    # 대소문자 모두 저장 (호환성)
+                    result_dict[col] = value
+                    result_dict[col.lower()] = value
+                results.append(result_dict)
+            
+            cursor.close()
+            
+            logger.info(f"[에러 타입 통계 쿼리 실행] 완료 - {len(results)}행 반환")
+            return results
+            
+    except Exception as e:
+        logger.error(f"[에러 타입 통계 쿼리 실행] 오류 발생: {e}", exc_info=True)
+        raise
 
 
 @app.post("/ask", response_model=AnswerResponse, tags=["질문-답변"])
@@ -321,27 +580,70 @@ def _format_process_answer(
     """공정정보 기반 답변 포맷팅"""
     answer_parts = []
     
-    # 통계 정보
-    answer_parts.append("=" * 60)
-    answer_parts.append("다운타임 정보 조회 결과")
-    answer_parts.append("=" * 60)
+    # 헤더
+    answer_parts.append("=" * 70)
+    answer_parts.append("📊 다운타임 정보 조회 결과")
+    answer_parts.append("=" * 70)
     
+    # 검색 조건 요약
+    search_conditions = []
+    if process_info.site_id:
+        search_conditions.append(f"사이트: {process_info.site_id}")
+    if process_info.factory_id:
+        search_conditions.append(f"공장: {process_info.factory_id}")
+    if process_info.line_id:
+        search_conditions.append(f"라인: {process_info.line_id}")
+    if process_info.process_id:
+        search_conditions.append(f"공정: {process_info.process_id}")
+    if process_info.model_id:
+        search_conditions.append(f"모델: {process_info.model_id}")
+    if process_info.eqp_id:
+        search_conditions.append(f"장비: {process_info.eqp_id}")
+    if process_info.down_type:
+        down_type_kr = "계획" if process_info.down_type == "SCHEDULED" else "비계획"
+        search_conditions.append(f"다운타임 유형: {down_type_kr}")
+    if process_info.status_id:
+        status_kr = "완료" if process_info.status_id == "COMPLETED" else "진행중"
+        search_conditions.append(f"상태: {status_kr}")
+    if process_info.error_code:
+        search_conditions.append(f"에러 코드: {process_info.error_code}")
+    if process_info.down_time_min:
+        search_conditions.append(f"다운타임: {process_info.down_time_min}분 이상")
+    if process_info.down_time_max:
+        search_conditions.append(f"다운타임: {process_info.down_time_max}분 이하")
+    if process_info.start_time_from or process_info.start_time_to:
+        time_range = f"{process_info.start_time_from or '시작'} ~ {process_info.start_time_to or '끝'}"
+        search_conditions.append(f"기간: {time_range}")
+    
+    if search_conditions:
+        answer_parts.append(f"\n🔍 검색 조건: {', '.join(search_conditions)}")
+    
+    # 통계 정보
     if stats.get('total_count', 0) > 0:
-        answer_parts.append(f"\n[통계 정보]")
-        answer_parts.append(f"- 총 건수: {int(stats.get('total_count', 0))}건")
-        answer_parts.append(f"- 총 다운타임: {stats.get('total_minutes', 0):.1f}분 ({stats.get('total_minutes', 0)/60:.2f}시간)")
-        answer_parts.append(f"- 평균 다운타임: {stats.get('avg_minutes', 0):.1f}분")
-        answer_parts.append(f"- 최소 다운타임: {stats.get('min_minutes', 0):.1f}분")
-        answer_parts.append(f"- 최대 다운타임: {stats.get('max_minutes', 0):.1f}분")
-        answer_parts.append(f"- 계획 다운타임: {int(stats.get('scheduled_count', 0))}건")
-        answer_parts.append(f"- 비계획 다운타임: {int(stats.get('unscheduled_count', 0))}건")
-        answer_parts.append(f"- 완료: {int(stats.get('completed_count', 0))}건")
-        answer_parts.append(f"- 진행중: {int(stats.get('in_progress_count', 0))}건")
+        answer_parts.append(f"\n📈 통계 정보")
+        answer_parts.append("-" * 70)
+        
+        total_count = int(stats.get('total_count', 0))
+        total_minutes = stats.get('total_minutes', 0)
+        avg_minutes = stats.get('avg_minutes', 0)
+        min_minutes = stats.get('min_minutes', 0)
+        max_minutes = stats.get('max_minutes', 0)
+        scheduled_count = int(stats.get('scheduled_count', 0))
+        unscheduled_count = int(stats.get('unscheduled_count', 0))
+        completed_count = int(stats.get('completed_count', 0))
+        in_progress_count = int(stats.get('in_progress_count', 0))
+        
+        answer_parts.append(f"  • 총 건수: {total_count:,}건")
+        answer_parts.append(f"  • 총 다운타임: {total_minutes:,.1f}분 ({total_minutes/60:,.2f}시간)")
+        answer_parts.append(f"  • 평균 다운타임: {avg_minutes:.1f}분")
+        answer_parts.append(f"  • 최소/최대: {min_minutes:.1f}분 / {max_minutes:.1f}분")
+        answer_parts.append(f"  • 계획/비계획: {scheduled_count:,}건 / {unscheduled_count:,}건")
+        answer_parts.append(f"  • 완료/진행중: {completed_count:,}건 / {in_progress_count:,}건")
             
     # 상세 정보 (최대 10건)
     if results:
-        answer_parts.append(f"\n[상세 정보] (최근 {min(len(results), 10)}건)")
-        answer_parts.append("-" * 60)
+        answer_parts.append(f"\n📋 상세 정보 (최근 {min(len(results), 10)}건)")
+        answer_parts.append("-" * 70)
         
         for i, result in enumerate(results[:10], 1):
             # Oracle DB는 컬럼명을 대문자로 반환하므로 대소문자 모두 확인
@@ -350,54 +652,69 @@ def _format_process_answer(
                 return result_dict.get(key.lower()) or result_dict.get(key.upper()) or result_dict.get(key)
             
             informnote_id = get_value(result, 'informnote_id') or 'N/A'
-            answer_parts.append(f"\n{i}. 다운타임 ID: {informnote_id}")
             
+            # 주요 정보를 한 줄로 요약
             site_id = get_value(result, 'site_id')
-            if site_id:
-                answer_parts.append(f"   사이트: {site_id}")
-            
             factory_id = get_value(result, 'factory_id')
-            if factory_id:
-                answer_parts.append(f"   공장: {factory_id}")
-            
             process_id = get_value(result, 'process_id')
-            if process_id:
-                answer_parts.append(f"   공정: {process_id}")
-            
             line_id = get_value(result, 'line_id')
-            if line_id:
-                answer_parts.append(f"   라인: {line_id}")
-            
             eqp_id = get_value(result, 'eqp_id')
+            
+            location_parts = []
+            if site_id:
+                location_parts.append(f"사이트: {site_id}")
+            if factory_id:
+                location_parts.append(f"공장: {factory_id}")
+            if line_id:
+                location_parts.append(f"라인: {line_id}")
+            if process_id:
+                location_parts.append(f"공정: {process_id}")
             if eqp_id:
-                answer_parts.append(f"   장비: {eqp_id}")
+                location_parts.append(f"장비: {eqp_id}")
+            
+            location_str = " | ".join(location_parts) if location_parts else "위치 정보 없음"
+            
+            answer_parts.append(f"\n[{i}] 다운타임 ID: {informnote_id}")
+            answer_parts.append(f"    위치: {location_str}")
             
             down_start_time = get_value(result, 'down_start_time')
-            if down_start_time:
-                answer_parts.append(f"   다운 시작: {down_start_time}")
-            
             down_end_time = get_value(result, 'down_end_time')
-            if down_end_time:
-                answer_parts.append(f"   다운 종료: {down_end_time}")
-            
             down_time_minutes = get_value(result, 'down_time_minutes')
-            if down_time_minutes is not None:
-                answer_parts.append(f"   지속 시간: {down_time_minutes}분")
+            
+            if down_start_time:
+                time_info = f"시작: {down_start_time}"
+                if down_end_time:
+                    time_info += f" | 종료: {down_end_time}"
+                if down_time_minutes is not None:
+                    hours = int(down_time_minutes // 60)
+                    minutes = int(down_time_minutes % 60)
+                    if hours > 0:
+                        time_info += f" | 지속: {hours}시간 {minutes}분 ({down_time_minutes:.1f}분)"
+                    else:
+                        time_info += f" | 지속: {minutes}분"
+                answer_parts.append(f"    시간: {time_info}")
             
             down_type = get_value(result, 'down_type')
-            if down_type:
-                answer_parts.append(f"   유형: {down_type}")
-            
             error_code = get_value(result, 'error_code')
-            if error_code:
-                answer_parts.append(f"   에러 코드: {error_code}")
-            
             status_id = get_value(result, 'status_id')
+            
+            status_parts = []
+            if down_type:
+                down_type_kr = "계획" if down_type == "SCHEDULED" else "비계획"
+                status_parts.append(f"유형: {down_type_kr}")
+            if error_code:
+                status_parts.append(f"에러: {error_code}")
             if status_id:
-                answer_parts.append(f"   상태: {status_id}")
+                status_kr = "완료" if status_id == "COMPLETED" else "진행중"
+                status_parts.append(f"상태: {status_kr}")
+            
+            if status_parts:
+                answer_parts.append(f"    상태: {' | '.join(status_parts)}")
         
         if len(results) > 10:
-            answer_parts.append(f"\n... 외 {len(results) - 10}건 더 있습니다.")
+            answer_parts.append(f"\n💡 참고: 총 {len(results)}건 중 최근 10건만 표시했습니다.")
+    
+    answer_parts.append("\n" + "=" * 70)
     
     return "\n".join(answer_parts)
 
