@@ -143,8 +143,10 @@ class ProcessQueryBuilder:
         # ORDER BY 절
         order_by_clause = "ORDER BY down_start_time DESC"
         
-        # 최종 쿼리 조합
-        query = f"{select_clause} {where_clause} {order_by_clause}"
+        # 최종 쿼리 조합 (공백 정리)
+        query = f"{select_clause.strip()} {where_clause} {order_by_clause}".strip()
+        # 중복 공백 제거
+        query = " ".join(query.split())
         
         logger.info(f"[쿼리 생성] 완료")
         logger.debug(f"[쿼리 생성] 생성된 쿼리: {query}")
@@ -170,12 +172,13 @@ class ProcessQueryBuilder:
             with db.get_connection() as conn:
                 cursor = conn.cursor()
                 
-                # ROWNUM을 사용한 LIMIT 구현 (Oracle)
-                limited_query = f"""
-                    SELECT * FROM (
-                        {query}
-                    ) WHERE ROWNUM <= {limit}
-                """
+                # FETCH FIRST를 사용한 LIMIT 구현 (Oracle 12c+)
+                # ROWNUM보다 FETCH FIRST가 더 명확하고 바인드 파라미터와 충돌하지 않음
+                if "FETCH FIRST" not in query.upper() and "ROWNUM" not in query.upper():
+                    limited_query = f"{query.rstrip()} FETCH FIRST {limit} ROWS ONLY"
+                else:
+                    # 이미 LIMIT이 포함된 경우 그대로 사용
+                    limited_query = query
                 
                 # 바인드 파라미터 적용
                 if bind_params:
@@ -189,7 +192,7 @@ class ProcessQueryBuilder:
                 # 결과 가져오기
                 rows = cursor.fetchall()
                 
-                # 딕셔너리 리스트로 변환
+                # 딕셔너리 리스트로 변환 (대소문자 모두 지원)
                 results = []
                 for row in rows:
                     result_dict = {}
@@ -198,7 +201,9 @@ class ProcessQueryBuilder:
                         # TIMESTAMP를 문자열로 변환
                         if hasattr(value, 'strftime'):
                             value = value.strftime('%Y-%m-%d %H:%M:%S')
+                        # 대소문자 모두 저장 (호환성)
                         result_dict[col] = value
+                        result_dict[col.lower()] = value
                     results.append(result_dict)
                 
                 cursor.close()

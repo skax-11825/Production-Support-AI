@@ -345,50 +345,54 @@ def _format_process_answer(
         
         for i, result in enumerate(results[:10], 1):
             # Oracle DB는 컬럼명을 대문자로 반환하므로 대소문자 모두 확인
-            informnote_id = result.get('informnote_id') or result.get('INFORMNOTE_ID') or 'N/A'
+            def get_value(result_dict, key):
+                """대소문자 구분 없이 값 가져오기"""
+                return result_dict.get(key.lower()) or result_dict.get(key.upper()) or result_dict.get(key)
+            
+            informnote_id = get_value(result, 'informnote_id') or 'N/A'
             answer_parts.append(f"\n{i}. 다운타임 ID: {informnote_id}")
             
-            site_id = result.get('site_id') or result.get('SITE_ID')
+            site_id = get_value(result, 'site_id')
             if site_id:
                 answer_parts.append(f"   사이트: {site_id}")
             
-            factory_id = result.get('factory_id') or result.get('FACTORY_ID')
+            factory_id = get_value(result, 'factory_id')
             if factory_id:
                 answer_parts.append(f"   공장: {factory_id}")
             
-            process_id = result.get('process_id') or result.get('PROCESS_ID')
+            process_id = get_value(result, 'process_id')
             if process_id:
                 answer_parts.append(f"   공정: {process_id}")
             
-            line_id = result.get('line_id') or result.get('LINE_ID')
+            line_id = get_value(result, 'line_id')
             if line_id:
                 answer_parts.append(f"   라인: {line_id}")
             
-            eqp_id = result.get('eqp_id') or result.get('EQP_ID')
+            eqp_id = get_value(result, 'eqp_id')
             if eqp_id:
                 answer_parts.append(f"   장비: {eqp_id}")
             
-            down_start_time = result.get('down_start_time') or result.get('DOWN_START_TIME')
+            down_start_time = get_value(result, 'down_start_time')
             if down_start_time:
                 answer_parts.append(f"   다운 시작: {down_start_time}")
             
-            down_end_time = result.get('down_end_time') or result.get('DOWN_END_TIME')
+            down_end_time = get_value(result, 'down_end_time')
             if down_end_time:
                 answer_parts.append(f"   다운 종료: {down_end_time}")
             
-            down_time_minutes = result.get('down_time_minutes') or result.get('DOWN_TIME_MINUTES')
+            down_time_minutes = get_value(result, 'down_time_minutes')
             if down_time_minutes is not None:
                 answer_parts.append(f"   지속 시간: {down_time_minutes}분")
             
-            down_type = result.get('down_type') or result.get('DOWN_TYPE')
+            down_type = get_value(result, 'down_type')
             if down_type:
                 answer_parts.append(f"   유형: {down_type}")
             
-            error_code = result.get('error_code') or result.get('ERROR_CODE')
+            error_code = get_value(result, 'error_code')
             if error_code:
                 answer_parts.append(f"   에러 코드: {error_code}")
             
-            status_id = result.get('status_id') or result.get('STATUS_ID')
+            status_id = get_value(result, 'status_id')
             if status_id:
                 answer_parts.append(f"   상태: {status_id}")
         

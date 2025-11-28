@@ -128,9 +128,11 @@ class QuestionAnalyzer:
     # 에러 코드 패턴
     ERROR_CODE_PATTERNS = [
         r'\b(ERR[_\-][A-Z0-9_]+)\b',
+        r'\b([A-Z]{2,4}[_\-][A-Z]{2,4}[_\-]\d+)\b',  # CLN_CHM_200 같은 형식
         r'\b에러[:\s]*([A-Z0-9_\-]+)\b',
         r'\b(error|Error)[:\s]*([A-Z0-9_\-]+)\b',
         r'\b에러코드[:\s]*([A-Z0-9_\-]+)\b',
+        r'\b에러\s*코드[:\s]*([A-Z0-9_\-]+)\b',
     ]
     
     # 상태 패턴
@@ -450,13 +452,21 @@ class QuestionAnalyzer:
         """에러 코드 추출"""
         text_upper = text.upper()
         
+        # 먼저 "에러 코드" 키워드 뒤의 코드 추출 시도
+        error_keyword_match = re.search(r'에러\s*코드[:\s]*([A-Z0-9_\-]+)', text_upper, re.IGNORECASE)
+        if error_keyword_match:
+            error = error_keyword_match.group(1)
+            if error:
+                return error
+        
+        # 일반 패턴 매칭
         for pattern in self.ERROR_CODE_PATTERNS:
             match = re.search(pattern, text_upper, re.IGNORECASE)
             if match:
                 error = match.group(1) if match.groups() else match.group(0)
-                if error.startswith('ERR_'):
+                # ERR_ 형식이 아니어도 에러 코드로 인식 (CLN_CHM_200 등)
+                if error and (error.startswith('ERR_') or '_' in error or len(error) >= 6):
                     return error
-                return error if error else None
         
         return None
     
