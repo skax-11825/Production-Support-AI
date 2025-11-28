@@ -23,7 +23,7 @@ from dify_client import (
     request_answer,
     DifyClientError,
 )
-from question_analyzer import question_analyzer, ProcessInfo
+from question_analyzer import ProcessInfo
 from process_query_builder import query_builder
 
 # 로깅 설정
@@ -51,10 +51,36 @@ app.add_middleware(
 
 
 # 요청/응답 모델
+class ProcessFilters(BaseModel):
+    """Dify LLM이 추출한 공정 필터"""
+    site_id: Optional[str] = Field(None, description="사이트 ID (예: ICH, CJU)")
+    factory_id: Optional[str] = Field(None, description="공장 ID (예: FAC_M16)")
+    line_id: Optional[str] = Field(None, description="라인 ID (예: LINE_A1)")
+    process_id: Optional[str] = Field(None, description="공정 ID (예: PROC_PH)")
+    model_id: Optional[str] = Field(None, description="모델 ID (예: MDL_KE_PRO)")
+    eqp_id: Optional[str] = Field(None, description="장비 ID (예: EQP_1234)")
+    down_type: Optional[str] = Field(None, description="다운타임 유형 (SCHEDULED/UNSCHEDULED)")
+    status_id: Optional[str] = Field(None, description="상태 (COMPLETED/IN_PROGRESS)")
+    error_code: Optional[str] = Field(None, description="에러 코드")
+    down_time_minutes: Optional[float] = Field(None, description="정확한 다운타임 (분)")
+    down_time_min: Optional[float] = Field(None, description="최소 다운타임 (분 이상)")
+    down_time_max: Optional[float] = Field(None, description="최대 다운타임 (분 이하)")
+    start_time_from: Optional[str] = Field(None, description="다운 시작 시간 (YYYY-MM-DD HH:MM:SS 이상)")
+    start_time_to: Optional[str] = Field(None, description="다운 시작 시간 (YYYY-MM-DD HH:MM:SS 이하)")
+
+    def to_process_info(self) -> ProcessInfo:
+        """ProcessInfo로 변환"""
+        return ProcessInfo(**self.dict(exclude_unset=True))
+
+
 class QuestionRequest(BaseModel):
     """질문 요청 모델 (Dify에서 전달)"""
     question: str = Field(..., description="사용자 질문 (Dify input 변수)")
     context: Optional[str] = Field(None, description="추가 컨텍스트 정보 (선택사항)")
+    filters: Optional[ProcessFilters] = Field(
+        None,
+        description="Dify LLM이 추출한 공정 필터 (키워드 기반 정보)",
+    )
 
 
 class AnswerResponse(BaseModel):
@@ -392,6 +418,7 @@ async def ask_question(request: QuestionRequest, http_request: Request):
     Request Body:
     - question: 사용자의 질문 (Dify input 변수, 필수)
     - context: 추가 컨텍스트 정보 (선택사항)
+    - filters: Dify LLM이 추출한 공정정보 필터 (선택사항, 존재 시 DB 조회)
     
     Response:
     - answer: 생성된 답변 (Dify output 변수로 사용)
@@ -423,15 +450,20 @@ async def ask_question(request: QuestionRequest, http_request: Request):
                 detail="질문이 비어있습니다. 'question' 필드는 필수입니다."
             )
         
-        # 3단계: DB 조회 필요 여부 판단 및 질문 분석
+        # 3단계: Dify가 제공한 키워드 기반 공정정보 확인
         logger.info(f"[답변 생성 시작] 질문: '{question[:100]}...'")
         
-        # 질문 분석: 공정정보 추출 및 특정 가능 여부 판단
-        process_info, is_specific = question_analyzer.analyze(question)
+        if request.filters:
+            process_info = request.filters.to_process_info()
+            logger.info("[공정정보 입력] Dify LLM 필터 사용")
+        else:
+            process_info = ProcessInfo()
+            logger.info("[공정정보 입력] 필터 미제공 → DB 조회 생략 예정")
         
-        logger.info(f"[질문 분석 결과] 공정정보 특정 가능: {is_specific}")
+        is_specific = process_info.is_specific()
+        logger.info(f"[공정정보 처리] 특정 가능: {is_specific}")
         if is_specific:
-            logger.info(f"[질문 분석 결과] 추출된 정보: {process_info.to_dict()}")
+            logger.info(f"[공정정보 처리] 추출된 정보: {process_info.to_dict()}")
         
         data_count = None
         

@@ -5,15 +5,13 @@ Python FastAPI를 사용한 질문-답변 REST API 서버입니다. Oracle 데�
 ## 전체 시스템 흐름
 
 ```
-사용자 질문 → Dify LLM이 내용 분류
+사용자 질문 → Dify LLM이 내용 분석 및 키워드 추출
   ↓
 Dify 워크플로우 → HTTP Request 노드 → 백엔드 서버 (/ask)
   ↓
-백엔드에서 질문 분석 및 공정정보 추출
-  ├─ 공정정보 인식됨 → Oracle DB 쿼리 실행 → 결과를 Dify로 반환
-  └─ 공정정보 인식 안 됨 → Dify로 전달
+백엔드에서 전달받은 키워드(공정 필터)로 Oracle DB 쿼리 실행
   ↓
-Dify가 최종 답변 생성
+결과를 Dify로 반환 → Dify가 최종 답변 생성
 ```
 
 ## 기능
@@ -21,9 +19,10 @@ Dify가 최종 답변 생성
 - 질문을 받고 답변을 제공하는 REST API 엔드포인트
 - Oracle 데이터베이스 연동
 - Dify OpenAPI 연동 (선택 구성)
-- 공정정보 자동 추출 및 분류
+- Dify 제공 키워드 기반 Oracle DB 조회
 - 헬스 체크 엔드포인트
 - CORS 지원
+- 별도 CLI로 질문 분석/쿼리 테스트 (question_analyzer 활용)
 
 ## 사전 요구사항
 
@@ -114,8 +113,15 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 - 요청 본문:
 ```json
 {
-  "question": "질문 내용",
-  "context": "추가 컨텍스트 (선택사항)"
+  "question": "ICH 사이트 FAC_M16 PROC_PH 다운타임 알려줘",
+  "context": "추가 컨텍스트 (선택사항)",
+  "filters": {
+    "site_id": "ICH",
+    "factory_id": "FAC_M16",
+    "process_id": "PROC_PH",
+    "down_type": "UNSCHEDULED",
+    "down_time_min": 60
+  }
 }
 ```
 - 응답:
@@ -142,19 +148,13 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 2. **백엔드 서버 (FastAPI)**
    - 엔드포인트: `POST /ask`
    - 역할: 
-     - 질문 분석 및 공정정보 추출
+     - Dify가 전달한 공정 필터(`filters`) 검증
      - Oracle DB 쿼리 실행
      - 결과 포맷팅 및 반환
 
 3. **Question Analyzer**
-   - 역할: 사용자 질문에서 공정정보 추출
-   - 추출 정보:
-     - `site_id`: 사이트 ID (ICH, CJU, WUX 등)
-     - `factory_id`: 공장 ID (FAC_M16, FAC_C2F 등)
-     - `process_id`: 공정 ID (PROC_PH, PROC_ET 등)
-     - `model_id`: 모델 ID (MDL_KE_PRO 등)
-     - `down_type`: 다운타임 유형 (SCHEDULED/UNSCHEDULED)
-     - `down_time_minutes`: 다운타임 시간 (분)
+   - 역할: 테스트용 CLI에서만 사용되는 정규식 기반 키워드 추출기
+   - 제공 정보: `site_id`, `factory_id`, `process_id`, `model_id`, `eqp_id`, `down_type`, `status_id`, `error_code`, 다운타임/시간 범위 등
 
 4. **Process Query Builder**
    - 역할: 추출된 공정정보로 Oracle DB 쿼리 생성 및 실행
@@ -167,6 +167,29 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
    - 테이블: `Inform_note`
    - 역할: 반도체 공정 다운타임 데이터 저장 및 조회
 
+6. **Keyword Pipeline Tester (CLI)**
+   - 위치: `scripts/keyword_pipeline_tester.py`
+   - 역할: 백엔드 개발자가 질문-키워드-쿼리 파이프라인을 독립적으로 검증할 때 사용
+
+## 키워드 파이프라인 테스트 CLI
+
+Dify 없이도 질문 → 키워드 추출 → 쿼리 실행을 반복적으로 검증할 수 있는 스크립트를 제공합니다.
+
+```bash
+# 인터랙티브 모드 (무한 반복, exit 입력 시 종료)
+python scripts/keyword_pipeline_tester.py
+
+# 단일 질문만 테스트
+python scripts/keyword_pipeline_tester.py --question "ICH FAC_M16 PROC_PH 다운 2시간"
+
+# 실제 Oracle DB까지 실행 (환경변수 필요)
+python scripts/keyword_pipeline_tester.py --execute-query --limit 5
+```
+
+- `question_analyzer`가 내부에서 정규식 기반으로 필터를 추출합니다.
+- `--execute-query` 옵션을 사용하면 Oracle DB 연결을 확인 후 실제 결과를 확인할 수 있습니다.
+- CLI는 오직 개발/테스트 용도로만 사용하며, 운영 `/ask` 엔드포인트는 Dify가 제공한 `filters`만 신뢰합니다.
+
 ### 처리 흐름
 
 #### 케이스 1: 공정정보 특정 가능
@@ -174,8 +197,8 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 1. **질문 예시**: "ICH 사이트의 FAC_M16 공장에서 PROC_PH 공정 다운타임 알려줘"
 2. **처리 과정**:
    ```
-   질문 분석 → site_id: ICH, factory_id: FAC_M16, process_id: PROC_PH 추출
-   → SQL 쿼리 생성 및 실행
+   Dify LLM이 키워드를 추출하여 filters에 포함
+   → 백엔드가 filters로 SQL 쿼리 생성 및 실행
    → 결과 포맷팅 (통계 + 상세 정보)
    → Dify로 반환
    ```
@@ -195,9 +218,8 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 1. **질문 예시**: "반도체 공정이 뭐야?"
 2. **처리 과정**:
    ```
-   질문 분석 → 공정정보 추출 실패
-   → Dify API 호출 (설정된 경우)
-   → 기본 답변 생성
+   Dify LLM이 filters를 제공하지 않음 또는 필터 값이 없음
+   → 백엔드는 DB 조회를 건너뛰고 Dify API (또는 기본 답변)로 처리
    → Dify로 반환
    ```
 
