@@ -13,22 +13,18 @@ logger = logging.getLogger(__name__)
 class ProcessQueryBuilder:
     """공정정보 기반 쿼리 빌더"""
     
-    def __init__(self):
-        """초기화"""
-        pass
     
-    def build_query(self, process_info: ProcessInfo, question_type: str = "general") -> tuple:
+    def build_query(self, process_info: ProcessInfo) -> tuple:
         """
         공정정보를 기반으로 SQL 쿼리 생성
         
         Args:
             process_info: 추출된 공정정보
-            question_type: 질문 유형 (general, statistics, details 등)
         
         Returns:
-            SQL 쿼리 문자열
+            (SQL 쿼리 문자열, 바인드 파라미터 리스트)
         """
-        logger.info(f"[쿼리 생성] 시작 - 질문 유형: {question_type}")
+        logger.info(f"[쿼리 생성] 시작")
         
         # 기본 SELECT 절
         # 테이블 이름: INFORM_NOTE (엑셀 시트 이름 'Inform_note'의 대문자 버전)
@@ -82,13 +78,34 @@ class ProcessQueryBuilder:
             bind_params.append(process_info.model_id)
             param_index += 1
         
+        if process_info.line_id:
+            where_conditions.append(f"line_id = :{param_index}")
+            bind_params.append(process_info.line_id)
+            param_index += 1
+        
+        if process_info.eqp_id:
+            where_conditions.append(f"eqp_id = :{param_index}")
+            bind_params.append(process_info.eqp_id)
+            param_index += 1
+        
         if process_info.down_type:
             where_conditions.append(f"down_type = :{param_index}")
             bind_params.append(process_info.down_type)
             param_index += 1
         
+        if process_info.status_id:
+            where_conditions.append(f"status_id = :{param_index}")
+            bind_params.append(process_info.status_id)
+            param_index += 1
+        
+        if process_info.error_code:
+            where_conditions.append(f"error_code = :{param_index}")
+            bind_params.append(process_info.error_code)
+            param_index += 1
+        
+        # 다운타임 시간 범위 처리
         if process_info.down_time_minutes is not None:
-            # 다운타임 시간 범위 검색 (입력값의 ±10% 범위)
+            # 정확한 값 검색 (입력값의 ±10% 범위)
             tolerance = process_info.down_time_minutes * 0.1
             min_time = process_info.down_time_minutes - tolerance
             max_time = process_info.down_time_minutes + tolerance
@@ -96,6 +113,27 @@ class ProcessQueryBuilder:
             bind_params.append(max(0, min_time))
             bind_params.append(max_time)
             param_index += 2
+        elif process_info.down_time_min is not None or process_info.down_time_max is not None:
+            # 범위 검색 (이상, 이하 등)
+            if process_info.down_time_min is not None:
+                where_conditions.append(f"down_time_minutes >= :{param_index}")
+                bind_params.append(process_info.down_time_min)
+                param_index += 1
+            if process_info.down_time_max is not None:
+                where_conditions.append(f"down_time_minutes <= :{param_index}")
+                bind_params.append(process_info.down_time_max)
+                param_index += 1
+        
+        # 시간 범위 처리
+        if process_info.start_time_from:
+            where_conditions.append(f"down_start_time >= TO_TIMESTAMP(:{param_index}, 'YYYY-MM-DD HH24:MI:SS')")
+            bind_params.append(process_info.start_time_from)
+            param_index += 1
+        
+        if process_info.start_time_to:
+            where_conditions.append(f"down_start_time <= TO_TIMESTAMP(:{param_index}, 'YYYY-MM-DD HH24:MI:SS')")
+            bind_params.append(process_info.start_time_to)
+            param_index += 1
         
         # WHERE 절 조합
         where_clause = ""
@@ -210,9 +248,51 @@ class ProcessQueryBuilder:
                     bind_params.append(process_info.model_id)
                     param_index += 1
                 
+                if process_info.line_id:
+                    where_conditions.append(f"line_id = :{param_index}")
+                    bind_params.append(process_info.line_id)
+                    param_index += 1
+                
+                if process_info.eqp_id:
+                    where_conditions.append(f"eqp_id = :{param_index}")
+                    bind_params.append(process_info.eqp_id)
+                    param_index += 1
+                
                 if process_info.down_type:
                     where_conditions.append(f"down_type = :{param_index}")
                     bind_params.append(process_info.down_type)
+                    param_index += 1
+                
+                if process_info.status_id:
+                    where_conditions.append(f"status_id = :{param_index}")
+                    bind_params.append(process_info.status_id)
+                    param_index += 1
+                
+                if process_info.error_code:
+                    where_conditions.append(f"error_code = :{param_index}")
+                    bind_params.append(process_info.error_code)
+                    param_index += 1
+                
+                # 다운타임 시간 범위 처리
+                if process_info.down_time_min is not None:
+                    where_conditions.append(f"down_time_minutes >= :{param_index}")
+                    bind_params.append(process_info.down_time_min)
+                    param_index += 1
+                
+                if process_info.down_time_max is not None:
+                    where_conditions.append(f"down_time_minutes <= :{param_index}")
+                    bind_params.append(process_info.down_time_max)
+                    param_index += 1
+                
+                # 시간 범위 처리
+                if process_info.start_time_from:
+                    where_conditions.append(f"down_start_time >= TO_TIMESTAMP(:{param_index}, 'YYYY-MM-DD HH24:MI:SS')")
+                    bind_params.append(process_info.start_time_from)
+                    param_index += 1
+                
+                if process_info.start_time_to:
+                    where_conditions.append(f"down_start_time <= TO_TIMESTAMP(:{param_index}, 'YYYY-MM-DD HH24:MI:SS')")
+                    bind_params.append(process_info.start_time_to)
                     param_index += 1
                 
                 where_clause = ""

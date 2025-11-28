@@ -15,10 +15,18 @@ class ProcessInfo:
     """공정정보 데이터 클래스"""
     site_id: Optional[str] = None
     factory_id: Optional[str] = None
+    line_id: Optional[str] = None
     process_id: Optional[str] = None
     model_id: Optional[str] = None
+    eqp_id: Optional[str] = None
     down_type: Optional[str] = None  # SCHEDULED, UNSCHEDULED
+    status_id: Optional[str] = None  # COMPLETED, IN_PROGRESS
+    error_code: Optional[str] = None
     down_time_minutes: Optional[float] = None  # 분 단위
+    down_time_min: Optional[float] = None  # 최소 다운타임 (분)
+    down_time_max: Optional[float] = None  # 최대 다운타임 (분)
+    start_time_from: Optional[str] = None  # 다운 시작 시간 범위 (시작)
+    start_time_to: Optional[str] = None  # 다운 시작 시간 범위 (끝)
     
     def is_specific(self) -> bool:
         """공정정보가 특정 가능한지 확인"""
@@ -26,10 +34,18 @@ class ProcessInfo:
         return any([
             self.site_id,
             self.factory_id,
+            self.line_id,
             self.process_id,
             self.model_id,
+            self.eqp_id,
             self.down_type,
-            self.down_time_minutes is not None
+            self.status_id,
+            self.error_code,
+            self.down_time_minutes is not None,
+            self.down_time_min is not None,
+            self.down_time_max is not None,
+            self.start_time_from,
+            self.start_time_to
         ])
     
     def to_dict(self) -> Dict:
@@ -37,10 +53,18 @@ class ProcessInfo:
         return {
             'site_id': self.site_id,
             'factory_id': self.factory_id,
+            'line_id': self.line_id,
             'process_id': self.process_id,
             'model_id': self.model_id,
+            'eqp_id': self.eqp_id,
             'down_type': self.down_type,
-            'down_time_minutes': self.down_time_minutes
+            'status_id': self.status_id,
+            'error_code': self.error_code,
+            'down_time_minutes': self.down_time_minutes,
+            'down_time_min': self.down_time_min,
+            'down_time_max': self.down_time_max,
+            'start_time_from': self.start_time_from,
+            'start_time_to': self.start_time_to
         }
 
 
@@ -87,6 +111,35 @@ class QuestionAnalyzer:
         r'\b(model|Model)[:\s]*([A-Z0-9_-]+)\b',
     ]
     
+    # 라인 ID 패턴
+    LINE_PATTERNS = [
+        r'\b(LINE[_\-][A-Z0-9_]+)\b',
+        r'\b라인[:\s]*([A-Z0-9_\-]+)\b',
+        r'\b(line|Line)[:\s]*([A-Z0-9_\-]+)\b',
+    ]
+    
+    # 장비 ID 패턴
+    EQUIPMENT_PATTERNS = [
+        r'\b(EQP[_\-][A-Z0-9_]+)\b',
+        r'\b장비[:\s]*([A-Z0-9_\-]+)\b',
+        r'\b(equipment|Equipment|eqp|Eqp)[:\s]*([A-Z0-9_\-]+)\b',
+    ]
+    
+    # 에러 코드 패턴
+    ERROR_CODE_PATTERNS = [
+        r'\b(ERR[_\-][A-Z0-9_]+)\b',
+        r'\b에러[:\s]*([A-Z0-9_\-]+)\b',
+        r'\b(error|Error)[:\s]*([A-Z0-9_\-]+)\b',
+        r'\b에러코드[:\s]*([A-Z0-9_\-]+)\b',
+    ]
+    
+    # 상태 패턴
+    STATUS_PATTERNS = [
+        (r'\b(완료|COMPLETED|completed|완료된|완료한)\b', 'COMPLETED'),
+        (r'\b(진행중|IN_PROGRESS|in_progress|진행\s*중|진행\s*중인)\b', 'IN_PROGRESS'),
+        (r'\b(처리중|처리\s*중|처리\s*중인)\b', 'IN_PROGRESS'),
+    ]
+    
     # 다운타임 유형 패턴
     DOWN_TYPE_PATTERNS = [
         (r'\b(계획|스케줄|SCHEDULED|scheduled)\b', 'SCHEDULED'),
@@ -104,9 +157,25 @@ class QuestionAnalyzer:
         (r'(\d+(?:\.\d+)?)\s*시간\s*(\d+(?:\.\d+)?)\s*분', None),  # N시간 M분
     ]
     
-    def __init__(self):
-        """초기화"""
-        pass
+    # 비교 연산자 패턴 (이상, 이하, 초과, 미만)
+    COMPARISON_PATTERNS = [
+        (r'(\d+(?:\.\d+)?)\s*(?:시간|h|hour|분|m|min)\s*(?:이상|>=|>=|over|more)', '>='),
+        (r'(\d+(?:\.\d+)?)\s*(?:시간|h|hour|분|m|min)\s*(?:이하|<=|<=|under|less)', '<='),
+        (r'(\d+(?:\.\d+)?)\s*(?:시간|h|hour|분|m|min)\s*(?:초과|>|greater)', '>'),
+        (r'(\d+(?:\.\d+)?)\s*(?:시간|h|hour|분|m|min)\s*(?:미만|<|less)', '<'),
+    ]
+    
+    # 시간 범위 패턴 (지난 주, 이번 달 등)
+    TIME_RANGE_PATTERNS = [
+        (r'지난\s*주|last\s*week', 'last_week'),
+        (r'이번\s*주|this\s*week', 'this_week'),
+        (r'지난\s*달|last\s*month', 'last_month'),
+        (r'이번\s*달|this\s*month', 'this_month'),
+        (r'최근\s*(\d+)\s*일|last\s*(\d+)\s*days', 'last_days'),
+        (r'최근\s*(\d+)\s*주|last\s*(\d+)\s*weeks', 'last_weeks'),
+        (r'최근\s*(\d+)\s*달|last\s*(\d+)\s*months', 'last_months'),
+    ]
+    
     
     def analyze(self, question: str) -> Tuple[ProcessInfo, bool]:
         """
@@ -149,11 +218,57 @@ class QuestionAnalyzer:
             process_info.down_type = down_type
             logger.info(f"[질문 분석] 다운타임 유형 추출: {down_type}")
         
-        # 다운타임 시간 추출
-        down_time = self._extract_down_time(question)
-        if down_time is not None:
-            process_info.down_time_minutes = down_time
-            logger.info(f"[질문 분석] 다운타임 시간 추출: {down_time}분")
+        # 라인 ID 추출
+        line_id = self._extract_line_id(question)
+        if line_id:
+            process_info.line_id = line_id
+            logger.info(f"[질문 분석] 라인 ID 추출: {line_id}")
+        
+        # 장비 ID 추출
+        eqp_id = self._extract_equipment_id(question)
+        if eqp_id:
+            process_info.eqp_id = eqp_id
+            logger.info(f"[질문 분석] 장비 ID 추출: {eqp_id}")
+        
+        # 에러 코드 추출
+        error_code = self._extract_error_code(question)
+        if error_code:
+            process_info.error_code = error_code
+            logger.info(f"[질문 분석] 에러 코드 추출: {error_code}")
+        
+        # 상태 추출
+        status_id = self._extract_status(question)
+        if status_id:
+            process_info.status_id = status_id
+            logger.info(f"[질문 분석] 상태 추출: {status_id}")
+        
+        # 다운타임 시간 범위 추출 (이상, 이하 등) - 먼저 확인
+        down_time_range = self._extract_down_time_range(question)
+        if down_time_range:
+            min_time, max_time, operator = down_time_range
+            if operator == '>=':
+                process_info.down_time_min = min_time
+            elif operator == '<=':
+                process_info.down_time_max = max_time
+            elif operator == '>':
+                process_info.down_time_min = min_time + 0.01  # 초과는 약간 더 큰 값
+            elif operator == '<':
+                process_info.down_time_max = max_time - 0.01  # 미만은 약간 더 작은 값
+            logger.info(f"[질문 분석] 다운타임 시간 범위 추출: {operator} {min_time}분")
+        else:
+            # 비교 연산자가 없을 때만 정확한 값 추출
+            down_time = self._extract_down_time(question)
+            if down_time is not None:
+                process_info.down_time_minutes = down_time
+                logger.info(f"[질문 분석] 다운타임 시간 추출: {down_time}분")
+        
+        # 시간 범위 추출 (지난 주, 이번 달 등)
+        time_range = self._extract_time_range(question)
+        if time_range:
+            start_time, end_time = time_range
+            process_info.start_time_from = start_time
+            process_info.start_time_to = end_time
+            logger.info(f"[질문 분석] 시간 범위 추출: {start_time} ~ {end_time}")
         
         # 특정 가능 여부 판단
         is_specific = process_info.is_specific()
@@ -300,6 +415,118 @@ class QuestionAnalyzer:
             if match:
                 value = float(match.group(1))
                 return value * multiplier
+        
+        return None
+    
+    def _extract_line_id(self, text: str) -> Optional[str]:
+        """라인 ID 추출"""
+        text_upper = text.upper()
+        
+        for pattern in self.LINE_PATTERNS:
+            match = re.search(pattern, text_upper, re.IGNORECASE)
+            if match:
+                line = match.group(1) if match.groups() else match.group(0)
+                if line.startswith('LINE_'):
+                    return line
+                return f"LINE_{line.replace('-', '_')}" if line else None
+        
+        return None
+    
+    def _extract_equipment_id(self, text: str) -> Optional[str]:
+        """장비 ID 추출"""
+        text_upper = text.upper()
+        
+        for pattern in self.EQUIPMENT_PATTERNS:
+            match = re.search(pattern, text_upper, re.IGNORECASE)
+            if match:
+                eqp = match.group(1) if match.groups() else match.group(0)
+                if eqp.startswith('EQP_'):
+                    return eqp
+                return f"EQP_{eqp.replace('-', '_')}" if eqp else None
+        
+        return None
+    
+    def _extract_error_code(self, text: str) -> Optional[str]:
+        """에러 코드 추출"""
+        text_upper = text.upper()
+        
+        for pattern in self.ERROR_CODE_PATTERNS:
+            match = re.search(pattern, text_upper, re.IGNORECASE)
+            if match:
+                error = match.group(1) if match.groups() else match.group(0)
+                if error.startswith('ERR_'):
+                    return error
+                return error if error else None
+        
+        return None
+    
+    def _extract_status(self, text: str) -> Optional[str]:
+        """상태 추출"""
+        text_upper = text.upper()
+        
+        for pattern, status in self.STATUS_PATTERNS:
+            if re.search(pattern, text_upper, re.IGNORECASE):
+                return status
+        
+        return None
+    
+    def _extract_down_time_range(self, text: str) -> Optional[tuple]:
+        """다운타임 시간 범위 추출 (이상, 이하 등)"""
+        for pattern, operator in self.COMPARISON_PATTERNS:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                value_str = match.group(1)
+                value = float(value_str)
+                
+                # 시간 단위 확인
+                if '시간' in match.group(0) or 'h' in match.group(0).lower() or 'hour' in match.group(0).lower():
+                    value = value * 60  # 시간을 분으로 변환
+                
+                return (value, value, operator)
+        
+        return None
+    
+    def _extract_time_range(self, text: str) -> Optional[tuple]:
+        """시간 범위 추출 (지난 주, 이번 달 등)"""
+        from datetime import datetime, timedelta
+        
+        for pattern, range_type in self.TIME_RANGE_PATTERNS:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                now = datetime.now()
+                
+                if range_type == 'last_week':
+                    start = now - timedelta(days=7)
+                    end = now
+                elif range_type == 'this_week':
+                    start = now - timedelta(days=now.weekday())
+                    end = now
+                elif range_type == 'last_month':
+                    start = now - timedelta(days=30)
+                    end = now
+                elif range_type == 'this_month':
+                    start = now.replace(day=1)
+                    end = now
+                elif range_type == 'last_days':
+                    days = int(match.group(1) if match.groups() else 7)
+                    start = now - timedelta(days=days)
+                    end = now
+                elif range_type == 'last_weeks':
+                    weeks = int(match.group(1) if match.groups() else 1)
+                    start = now - timedelta(weeks=weeks)
+                    end = now
+                elif range_type == 'last_months':
+                    months = int(match.group(1) if match.groups() else 1)
+                    start = now - timedelta(days=months * 30)
+                    end = now
+                else:
+                    continue
+                
+                # Oracle TIMESTAMP 형식으로 변환
+                start_str = start.strftime('%Y-%m-%d %H:%M:%S')
+                end_str = end.strftime('%Y-%m-%d %H:%M:%S')
+                
+                return (start_str, end_str)
         
         return None
 

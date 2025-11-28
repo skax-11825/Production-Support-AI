@@ -189,7 +189,7 @@ async def ask_question(request: QuestionRequest, http_request: Request):
             answer = await generate_answer(question, context)
             data_count = None
         
-        # 4단계: 응답 반환 (Dify로 전달)
+        # 5단계: 응답 반환 (Dify로 전달)
         logger.info(f"[답변 생성 완료] 답변 길이: {len(answer)} 문자")
         if data_count is not None:
             logger.info(f"[답변 생성 완료] 조회된 데이터: {data_count}건")
@@ -249,7 +249,7 @@ async def generate_answer_with_process_info(
         # 데이터베이스 연결 확인
         if not db.test_connection():
             logger.error("[공정정보 기반 답변] 데이터베이스 연결 실패")
-            return "데이터베이스에 연결할 수 없습니다. 시스템 관리자에게 문의하세요."
+            return "데이터베이스에 연결할 수 없습니다. 시스템 관리자에게 문의하세요.", 0
         
         logger.info("[공정정보 기반 답변] 데이터베이스 연결 성공")
         
@@ -267,14 +267,28 @@ async def generate_answer_with_process_info(
                 answer += f"- 사이트: {process_info.site_id}\n"
             if process_info.factory_id:
                 answer += f"- 공장: {process_info.factory_id}\n"
+            if process_info.line_id:
+                answer += f"- 라인: {process_info.line_id}\n"
             if process_info.process_id:
                 answer += f"- 공정: {process_info.process_id}\n"
             if process_info.model_id:
                 answer += f"- 모델: {process_info.model_id}\n"
+            if process_info.eqp_id:
+                answer += f"- 장비: {process_info.eqp_id}\n"
             if process_info.down_type:
                 answer += f"- 다운타임 유형: {process_info.down_type}\n"
+            if process_info.status_id:
+                answer += f"- 상태: {process_info.status_id}\n"
+            if process_info.error_code:
+                answer += f"- 에러 코드: {process_info.error_code}\n"
             if process_info.down_time_minutes:
                 answer += f"- 다운타임 시간: {process_info.down_time_minutes}분\n"
+            if process_info.down_time_min:
+                answer += f"- 최소 다운타임: {process_info.down_time_min}분 이상\n"
+            if process_info.down_time_max:
+                answer += f"- 최대 다운타임: {process_info.down_time_max}분 이하\n"
+            if process_info.start_time_from or process_info.start_time_to:
+                answer += f"- 시간 범위: {process_info.start_time_from or '시작'} ~ {process_info.start_time_to or '끝'}\n"
             
             return answer, 0
         
@@ -284,23 +298,8 @@ async def generate_answer_with_process_info(
         # 답변 생성
         answer = _format_process_answer(results, stats, process_info, question)
         data_count = len(results)
-            
-        # Dify API 호출 비활성화 (공정정보 기반 답변은 DB 결과를 직접 사용)
-        # Dify 워크플로우에서 이미 처리하므로 여기서는 DB 결과만 반환
-        if False and is_dify_enabled() and len(results) > 20:
-            try:
-                logger.info("[공정정보 기반 답변] Dify API로 요약 요청")
-                dify_context = f"다음은 조회된 다운타임 데이터입니다:\n\n{answer[:3000]}..."
-                dify_answer = await request_answer(
-                    f"위 데이터를 바탕으로 '{question}'에 대한 요약 답변을 자연스럽게 제공해주세요.",
-                    dify_context
-                )
-                if dify_answer and len(dify_answer) > 50:
-                    answer = f"{dify_answer}\n\n[상세 데이터]\n{answer}"
-                    logger.info("[공정정보 기반 답변] Dify 요약 완료")
-            except Exception as e:
-                logger.warning(f"[공정정보 기반 답변] Dify 요약 실패 (기본 답변 사용): {e}")
         
+        # Dify 워크플로우에서 이미 처리하므로 여기서는 DB 결과만 반환
         logger.info(f"[공정정보 기반 답변] 완료 - 답변 길이: {len(answer)} 문자, 데이터: {data_count}건")
         return answer, data_count
         
@@ -360,6 +359,10 @@ def _format_process_answer(
             process_id = result.get('process_id') or result.get('PROCESS_ID')
             if process_id:
                 answer_parts.append(f"   공정: {process_id}")
+            
+            line_id = result.get('line_id') or result.get('LINE_ID')
+            if line_id:
+                answer_parts.append(f"   라인: {line_id}")
             
             eqp_id = result.get('eqp_id') or result.get('EQP_ID')
             if eqp_id:
