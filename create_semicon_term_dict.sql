@@ -1,6 +1,7 @@
 -- =============================================================================
 -- FAB_TERMS_DICTIONARY 테이블 생성 스크립트
--- normalized_data.xlsx 기반의 용어 사전 테이블 정의
+-- normalized_data.xlsx의 'fab_terms_dictionary' 시트 기반
+-- 테이블 이름: FAB_TERMS_DICTIONARY (엑셀 시트 이름의 대문자 버전)
 -- =============================================================================
 
 CREATE TABLE FAB_TERMS_DICTIONARY (

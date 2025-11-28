@@ -1,6 +1,28 @@
 version: "3.8"
 
 services:
+  # Oracle Database 서비스
+  oracle-db:
+    image: gvenzl/oracle-xe:23-slim
+    container_name: oracle-db
+    ports:
+      - "1521:1521"
+    environment:
+      - ORACLE_PASSWORD=oracle
+      - ORACLE_DATABASE=FREEPDB1
+    volumes:
+      - oracle-data:/opt/oracle/oradata
+    healthcheck:
+      test: ["CMD-SHELL", "sqlplus -s system/oracle@localhost:1521/FREEPDB1 <<< 'SELECT 1 FROM DUAL;' | grep -q '1'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    restart: unless-stopped
+    networks:
+      - default
+
+  # 애플리케이션 서비스
   question-answer-api:
     build: .
     container_name: question-answer-api
@@ -8,13 +30,22 @@ services:
       - "8000:8000"
     environment:
       - PYTHONUNBUFFERED=1
-      - ORACLE_DSN=host.docker.internal:1521/FREEPDB1
+      - ORACLE_DSN=oracle-db:1521/FREEPDB1
+      - ORACLE_USER=system
+      - ORACLE_PASSWORD=oracle
       - SKIP_DB_BOOTSTRAP=${SKIP_DB_BOOTSTRAP:-0}
     env_file:
       - .env
+    depends_on:
+      oracle-db:
+        condition: service_healthy
     restart: unless-stopped
     networks:
       - default
+
+volumes:
+  oracle-data:
+    driver: local
 
 networks:
   default:

@@ -205,17 +205,20 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
 ### Oracle DB 테이블 생성
 
-#### 방법 1: Python 스크립트 사용 (권장)
+#### 방법 1: 통합 스크립트 사용 (권장)
+
+모든 테이블을 한 번에 생성:
 
 ```bash
-./venv/bin/python3 setup_informnote_table.py
+./venv/bin/python3 setup_tables.py
 ```
 
 스크립트 실행 시:
 - 데이터베이스 연결 확인
+- 레퍼런스 테이블 생성 (SITE, FACTORY, LINE 등)
+- 반도체 용어 사전 테이블 생성 (FAB_TERMS_DICTIONARY)
+- Inform Note 테이블 생성 (INFORM_NOTE)
 - SQL 파일 자동 실행
-- 테이블 생성 확인
-- 구조 검증
 
 **옵션**:
 - 기존 테이블 삭제 후 재생성: `y` 입력 (주의: 모든 데이터 삭제됨)
@@ -240,23 +243,116 @@ sqlplus user/password@database < create_informnote_table.sql
 - **상태 정보**: `status_id`
 - **메타데이터**: `created_at`, `updated_at`
 
-### 더미 데이터 생성 (선택사항)
+### 데이터 적재
 
-테스트를 위한 더미 데이터 생성:
+엑셀 파일(`normalized_data.xlsx`)에서 모든 데이터를 한 번에 적재:
 
 ```bash
-./venv/bin/python3 generate_dummy_data.py
+./venv/bin/python3 load_data.py
 ```
 
-실행 시 삽입할 데이터 개수 입력 (기본값: 1000개)
+스크립트 실행 시:
+- 레퍼런스 테이블 데이터 적재
+- 반도체 용어 사전 데이터 적재
+- Inform Note 데이터 적재
 
-## Docker Oracle DB 연결
+## Docker로 전체 시스템 실행 (권장)
+
+Docker Compose를 사용하면 Oracle DB와 애플리케이션을 한 번에 올릴 수 있습니다.
+
+### 빠른 시작
+
+```bash
+# 1. Docker Compose로 전체 시스템 실행
+docker compose up --build
+
+# 백그라운드 실행
+docker compose up -d --build
+```
+
+이 명령어는 다음을 자동으로 수행합니다:
+1. Oracle Database Express Edition (XE) 컨테이너 생성 및 시작
+2. 애플리케이션 컨테이너 빌드 및 시작
+3. Oracle DB가 준비될 때까지 대기
+4. DB 부트스트랩 실행 (테이블 생성 및 데이터 적재)
+5. FastAPI 서버 시작 (포트 8000)
+
+### Docker Compose 관리 명령어
+
+```bash
+# 전체 시스템 시작
+docker compose up -d
+
+# 전체 시스템 중지
+docker compose down
+
+# 전체 시스템 중지 및 볼륨 삭제 (주의: 데이터 삭제됨)
+docker compose down -v
+
+# 로그 확인
+docker compose logs -f
+
+# 특정 서비스 로그만 확인
+docker compose logs -f question-answer-api
+docker compose logs -f oracle-db
+
+# 컨테이너 상태 확인
+docker compose ps
+
+# 컨테이너 재시작
+docker compose restart
+
+# 특정 서비스만 재시작
+docker compose restart question-answer-api
+```
+
+### 환경 변수 설정
+
+Docker Compose 사용 시 기본 설정:
+- Oracle DB: `oracle-db:1521/FREEPDB1`
+- 사용자: `system`
+- 비밀번호: `oracle`
+
+`.env` 파일을 생성하여 다른 설정을 사용할 수 있습니다:
+
+```env
+ORACLE_USER=system
+ORACLE_PASSWORD=oracle
+ORACLE_DSN=oracle-db:1521/FREEPDB1
+SKIP_DB_BOOTSTRAP=0  # 0: 실행, 1: 생략
+```
+
+### DB 부트스트랩 건너뛰기
+
+이미 데이터가 있는 경우 부트스트랩을 건너뛸 수 있습니다:
+
+```bash
+SKIP_DB_BOOTSTRAP=1 docker compose up
+```
+
+또는 `.env` 파일에 `SKIP_DB_BOOTSTRAP=1` 추가
+
+### 데이터 영구 저장
+
+Oracle DB 데이터는 Docker 볼륨(`oracle-data`)에 저장되어 컨테이너를 재시작해도 데이터가 유지됩니다.
+
+볼륨 확인:
+```bash
+docker volume ls | grep oracle-data
+```
+
+볼륨 삭제 (주의: 모든 데이터 삭제):
+```bash
+docker volume rm agent_oracle-data
+```
+
+## Docker Oracle DB 연결 (수동 설정)
 
 ### Docker Oracle 컨테이너 확인
 
 현재 실행 중인 Oracle 컨테이너:
-- 컨테이너 이름: `oracle`
-- 이미지: `gvenzl/oracle-free`
+- 컨테이너 이름: `oracle-db` (Docker Compose 사용 시)
+- 이미지: `gvenzl/oracle-xe:23-slim`
 - 포트: `1521:1521`
 
 ### DSN 형식
@@ -331,17 +427,15 @@ EXIT;
 EOF
 ```
 
-### Docker로 전체 파이프라인 자동 실행
+### DB 부트스트랩 프로세스
 
-`docker-entrypoint.sh`가 Oracle 초기화 스크립트(`scripts/bootstrap_db.sh`)를 자동으로 호출하므로, 아래 한 줄로 전체 스키마/데이터 적재와 FastAPI 서버 실행을 동시에 진행할 수 있습니다.
+`docker-entrypoint.sh`가 Oracle 초기화 스크립트(`scripts/bootstrap_db.sh`)를 자동으로 호출합니다.
 
-```bash
-docker compose up --build
-```
-
-- 컨테이너 내부에서는 `setup_reference_tables.py → load_reference_data.py → setup_semicon_term_dict.py → load_semicon_term_dict.py → setup_informnote_table.py → load_inform_note_from_excel.py` 순으로 실행됩니다.
-- 로컬에서 이미 데이터를 채워두었고 Docker 기동 시 부트스트랩을 건너뛰고 싶다면 `SKIP_DB_BOOTSTRAP=1 docker compose up` 형태로 실행하세요.
-- 컨테이너에서 macOS/Windows 호스트의 Oracle을 바라볼 수 있도록 `docker-compose.yml`은 기본 DSN을 `host.docker.internal:1521/FREEPDB1`로 오버라이드합니다. 필요하면 `.env` 또는 Compose 환경변수를 수정해 주세요.
+실행 순서:
+1. Oracle DB 연결 대기 (최대 30회 시도)
+2. `setup_tables.py` - 모든 테이블 생성 (레퍼런스, 용어 사전, Inform Note)
+3. `load_data.py` - 모든 데이터 적재 (레퍼런스, 용어 사전, Inform Note)
+4. FastAPI 서버 시작
 
 ## Dify 연동 설정
 
@@ -531,8 +625,9 @@ build_windows.bat
 ├── config.py                # 설정 관리
 ├── dify_client.py           # Dify OpenAPI 연동 모듈
 ├── test_connection.py       # DB 연결 테스트 스크립트
-├── generate_dummy_data.py   # 더미 데이터 생성 스크립트
-├── setup_informnote_table.py # 테이블 생성 스크립트
+├── setup_tables.py          # 통합 테이블 생성 스크립트
+├── load_data.py             # 통합 데이터 적재 스크립트
+├── utils.py                 # 공통 유틸리티 함수
 ├── create_informnote_table.sql # 테이블 생성 SQL
 ├── requirements.txt         # Python 패키지 의존성
 ├── build.spec               # PyInstaller 빌드 설정

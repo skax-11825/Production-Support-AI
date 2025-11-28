@@ -21,14 +21,9 @@ run_plain() {
   "${PROJECT_ROOT}/venv/bin/python" "${PROJECT_ROOT}/${script}"
 }
 
-run_with_prompt "y\nyes\n" "setup_reference_tables.py"
-run_plain "load_reference_data.py"
-
-run_with_prompt "y\nyes\n" "setup_semicon_term_dict.py"
-run_with_prompt "y\n" "load_semicon_term_dict.py"
-
-run_with_prompt "y\nyes\n" "setup_informnote_table.py"
-run_plain "load_inform_note_from_excel.py"
+# 통합된 스크립트 사용
+run_with_prompt "y\nyes\n" "setup_tables.py"
+run_plain "load_data.py"
 
 log "Oracle DB 초기화 및 데이터 적재 완료"
 

@@ -284,7 +284,7 @@ async def generate_answer_with_process_info(
         # 답변 생성
         answer = _format_process_answer(results, stats, process_info, question)
         data_count = len(results)
-        
+            
         # Dify API 호출 비활성화 (공정정보 기반 답변은 DB 결과를 직접 사용)
         # Dify 워크플로우에서 이미 처리하므로 여기서는 DB 결과만 반환
         if False and is_dify_enabled() and len(results) > 20:
@@ -338,7 +338,7 @@ def _format_process_answer(
         answer_parts.append(f"- 비계획 다운타임: {int(stats.get('unscheduled_count', 0))}건")
         answer_parts.append(f"- 완료: {int(stats.get('completed_count', 0))}건")
         answer_parts.append(f"- 진행중: {int(stats.get('in_progress_count', 0))}건")
-    
+            
     # 상세 정보 (최대 10건)
     if results:
         answer_parts.append(f"\n[상세 정보] (최근 {min(len(results), 10)}건)")

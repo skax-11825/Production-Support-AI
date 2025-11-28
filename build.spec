@@ -8,6 +8,7 @@ a = Analysis(
     binaries=[],
     datas=[],
     hiddenimports=[
+        # Uvicorn 관련
         'uvicorn.lifespan.on',
         'uvicorn.lifespan.off',
         'uvicorn.protocols.websockets.auto',
@@ -18,16 +19,41 @@ a = Analysis(
         'uvicorn.loops.auto',
         'uvicorn.loops.asyncio',
         'uvicorn.logging',
+        # Oracle DB
         'oracledb',
+        # Pydantic 2.x 관련
         'pydantic_settings',
         'pydantic._internal._config',
         'pydantic._internal._generate_schema',
         'pydantic._internal._fields',
+        'pydantic._internal._model_construction',
+        'pydantic._internal._utils',
+        'pydantic._internal._dataclasses',
+        'pydantic._internal._decorators',
+        'pydantic._internal._validate_call',
+        # FastAPI 관련
+        'fastapi.middleware.cors',
+        'fastapi.responses',
+        # HTTP 클라이언트
+        'httpx',
+        'httpx._client',
+        'httpx._transports',
+        # 로깅
+        'logging',
     ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=[
+        # 불필요한 모듈 제외 (실행 파일 크기 감소)
+        'pandas',
+        'openpyxl',
+        'numpy',
+        'matplotlib',
+        'tkinter',
+        'IPython',
+        'jupyter',
+    ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,

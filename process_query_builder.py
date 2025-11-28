@@ -31,6 +31,7 @@ class ProcessQueryBuilder:
         logger.info(f"[쿼리 생성] 시작 - 질문 유형: {question_type}")
         
         # 기본 SELECT 절
+        # 테이블 이름: INFORM_NOTE (엑셀 시트 이름 'Inform_note'의 대문자 버전)
         select_clause = """
             SELECT 
                 informnote_id,
