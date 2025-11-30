@@ -1,21 +1,14 @@
 """
 질문-답변 API 서버
 FastAPI를 사용한 REST API 엔드포인트
-
-전체 흐름:
-1. 사용자 질문 → Dify LLM이 내용 분류
-2. Dify 워크플로우 → HTTP Request 노드 → 백엔드 서버 (/ask)
-3. 백엔드에서 질문 분석 및 공정정보 추출
-4. Oracle DB 쿼리 실행 (DB 정보가 필요한 경우)
-5. 결과를 Dify에 반환 (answer 필드)
-6. Dify가 최종 답변 생성
 """
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Depends, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
-from typing import Optional, Tuple, List, Dict
-from datetime import datetime
+from pydantic import BaseModel
+from typing import Optional, List
+from datetime import date
 import logging
+import json
 from database import db
 from config import settings
 from dify_client import (
@@ -23,8 +16,6 @@ from dify_client import (
     request_answer,
     DifyClientError,
 )
-from question_analyzer import ProcessInfo
-from process_query_builder import query_builder
 
 # 로깅 설정
 logging.basicConfig(
@@ -51,45 +42,17 @@ app.add_middleware(
 
 
 # 요청/응답 모델
-class ProcessFilters(BaseModel):
-    """Dify LLM이 추출한 공정 필터"""
-    site_id: Optional[str] = Field(None, description="사이트 ID (예: ICH, CJU)")
-    factory_id: Optional[str] = Field(None, description="공장 ID (예: FAC_M16)")
-    line_id: Optional[str] = Field(None, description="라인 ID (예: LINE_A1)")
-    process_id: Optional[str] = Field(None, description="공정 ID (예: PROC_PH)")
-    model_id: Optional[str] = Field(None, description="모델 ID (예: MDL_KE_PRO)")
-    eqp_id: Optional[str] = Field(None, description="장비 ID (예: EQP_1234)")
-    down_type: Optional[str] = Field(None, description="다운타임 유형 (SCHEDULED/UNSCHEDULED)")
-    status_id: Optional[str] = Field(None, description="상태 (COMPLETED/IN_PROGRESS)")
-    error_code: Optional[str] = Field(None, description="에러 코드")
-    down_time_minutes: Optional[float] = Field(None, description="정확한 다운타임 (분)")
-    down_time_min: Optional[float] = Field(None, description="최소 다운타임 (분 이상)")
-    down_time_max: Optional[float] = Field(None, description="최대 다운타임 (분 이하)")
-    start_time_from: Optional[str] = Field(None, description="다운 시작 시간 (YYYY-MM-DD HH:MM:SS 이상)")
-    start_time_to: Optional[str] = Field(None, description="다운 시작 시간 (YYYY-MM-DD HH:MM:SS 이하)")
-
-    def to_process_info(self) -> ProcessInfo:
-        """ProcessInfo로 변환"""
-        return ProcessInfo(**self.dict(exclude_unset=True))
-
-
 class QuestionRequest(BaseModel):
-    """질문 요청 모델 (Dify에서 전달)"""
-    question: str = Field(..., description="사용자 질문 (Dify input 변수)")
-    context: Optional[str] = Field(None, description="추가 컨텍스트 정보 (선택사항)")
-    filters: Optional[ProcessFilters] = Field(
-        None,
-        description="Dify LLM이 추출한 공정 필터 (키워드 기반 정보)",
-    )
+    """질문 요청 모델"""
+    question: Optional[str] = ""
+    context: Optional[str] = None  # 추가 컨텍스트 정보 (선택사항)
 
 
 class AnswerResponse(BaseModel):
-    """답변 응답 모델 (Dify로 반환)"""
-    answer: str = Field(..., description="생성된 답변 (Dify output 변수로 사용)")
-    question: str = Field(..., description="원본 질문")
-    success: bool = Field(True, description="처리 성공 여부")
-    process_specific: Optional[bool] = Field(None, description="공정정보 특정 가능 여부")
-    data_count: Optional[int] = Field(None, description="조회된 데이터 건수 (공정정보 특정 가능한 경우)")
+    """답변 응답 모델"""
+    answer: str
+    question: str
+    success: bool
 
 
 class HealthResponse(BaseModel):
@@ -99,30 +62,85 @@ class HealthResponse(BaseModel):
     dify_enabled: bool
 
 
-class ErrorTypeStatsRequest(BaseModel):
-    """에러 타입 통계 요청 모델"""
-    down_start_time: str = Field(..., description="다운 시작 시간 (YYYY-MM-DD HH:MM:SS 형식, 필수)")
-    down_end_time: str = Field(..., description="다운 종료 시간 (YYYY-MM-DD HH:MM:SS 형식, 필수)")
-    site_id: Optional[str] = Field(None, description="사이트 ID (선택사항)")
-    factory_id: Optional[str] = Field(None, description="공장 ID (선택사항)")
-    line_id: Optional[str] = Field(None, description="라인 ID (선택사항)")
-    process_id: Optional[str] = Field(None, description="공정 ID (선택사항)")
-    model_id: Optional[str] = Field(None, description="모델 ID (선택사항)")
-    eqp_id: Optional[str] = Field(None, description="장비 ID (선택사항)")
+class ErrorCodeStatsItem(BaseModel):
+    """Error Code 통계 아이템 모델"""
+    period: Optional[str] = None  # 기간 (월별/일별 집계 시 사용)
+    process_id: Optional[str] = None
+    process_name: Optional[str] = None
+    eqp_id: Optional[str] = None
+    eqp_name: Optional[str] = None
+    model_id: Optional[str] = None
+    model_name: Optional[str] = None
+    error_code: Optional[str] = None
+    error_des: Optional[str] = None
+    event_cnt: int
+    total_down_time_minutes: Optional[float] = None
 
 
-class ErrorTypeStatItem(BaseModel):
-    """에러 타입 통계 항목"""
-    error_type: Optional[str] = Field(None, description="에러 타입 (ERROR_CODE)")
-    down_cnt: int = Field(..., description="다운타임 건수")
-    total_down_time_minutes: float = Field(..., description="총 다운타임 시간 (분)")
+class ErrorCodeStatsResponse(BaseModel):
+    """Error Code 통계 응답 모델"""
+    list: List[ErrorCodeStatsItem]
 
 
-class ErrorTypeStatsResponse(BaseModel):
-    """에러 타입 통계 응답 모델"""
-    success: bool = Field(True, description="처리 성공 여부")
-    data: List[ErrorTypeStatItem] = Field(..., description="에러 타입별 통계 데이터")
-    total_count: int = Field(..., description="전체 에러 타입 종류 수")
+class ErrorCodeStatsRequest(BaseModel):
+    """Error Code 통계 요청 모델"""
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    process_id: Optional[str] = None
+    model_id: Optional[str] = None
+    eqp_id: Optional[str] = None
+    error_code: Optional[str] = None
+    group_by: Optional[str] = "error_code"  # 'error_code'(기본), 'month', 'day'
+
+
+class PMHistoryItem(BaseModel):
+    """PM(점검) 이력 아이템 모델"""
+    down_date: str  # 다운(점검) 시작 날짜 (YYYY-MM-DD)
+    down_type: str  # 다운 유형 이름 (SCHEDULED 등)
+    down_time_minutes: float
+
+
+class PMHistoryResponse(BaseModel):
+    """PM 이력 응답 모델"""
+    list: List[PMHistoryItem]
+
+
+class PMHistoryRequest(BaseModel):
+    """PM 이력 요청 모델"""
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    process_id: Optional[str] = None
+    eqp_id: Optional[str] = None
+    limit: Optional[int] = 10  # 최근 N건 조회 (기본값 10)
+
+
+class SearchItem(BaseModel):
+    """상세 내역 검색 아이템 모델"""
+    informnote_id: str
+    down_start_time: str
+    process_name: Optional[str] = None
+    eqp_name: Optional[str] = None
+    error_code: Optional[str] = None
+    error_desc: Optional[str] = None
+    act_content: Optional[str] = None
+    operator: Optional[str] = None
+    status: str  # "IN_PROGRESS" or "COMPLETED"
+
+
+class SearchResponse(BaseModel):
+    """상세 내역 검색 응답 모델"""
+    list: List[SearchItem]
+
+
+class SearchRequest(BaseModel):
+    """상세 내역 검색 요청 모델"""
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    process_id: Optional[str] = None
+    eqp_id: Optional[str] = None
+    operator: Optional[str] = None
+    status_id: Optional[int] = None  # 0: IN_PROGRESS, 1: COMPLETED
+    limit: Optional[int] = 20
 
 
 # 데이터베이스 연결 초기화
@@ -167,236 +185,348 @@ async def health_check():
     )
 
 
-@app.post("/case1/error-type-stats", response_model=ErrorTypeStatsResponse, tags=["통계"])
-async def get_error_type_stats(request: ErrorTypeStatsRequest):
+@app.post(
+    "/api/v1/informnote/stats/error-code",
+    response_model=ErrorCodeStatsResponse,
+    tags=["통계"]
+)
+async def get_error_code_stats(request: ErrorCodeStatsRequest):
     """
-    에러 타입별 다운타임 통계 조회 엔드포인트
+    공정/장비 Error Code별 건수·Down Time 집계 엔드포인트
     
-    공정/장비별 error type별 건수와 down time을 집계합니다.
-    
-    필수 파라미터:
-    - down_start_time: 다운 시작 시간 (YYYY-MM-DD HH:MM:SS)
-    - down_end_time: 다운 종료 시간 (YYYY-MM-DD HH:MM:SS)
-    
-    선택 파라미터:
-    - site_id: 사이트 ID
-    - factory_id: 공장 ID
-    - line_id: 라인 ID
-    - process_id: 공정 ID
-    - model_id: 모델 ID
-    - eqp_id: 장비 ID
-    
-    응답:
-    - error_type: 에러 타입 (ERROR_CODE)
-    - down_cnt: 다운타임 건수
-    - total_down_time_minutes: 총 다운타임 시간 (분)
+    - **start_date**: 조회 시작일 (선택)
+    - **end_date**: 조회 종료일 (선택)
+    - **process_id**: 공정 ID (선택)
+    - **model_id**: 장비 모델 ID (선택)
+    - **eqp_id**: 장비 ID (선택)
+    - **error_code**: 에러 코드 (선택)
+    - **group_by**: 집계 기준 ('error_code', 'month', 'day'). 기본값은 'error_code'
     """
-    logger.info("=" * 80)
-    logger.info("[에러 타입 통계 조회] 요청 수신")
-    logger.info(f"요청 파라미터: {request.dict()}")
+    # 요청 파라미터 JSON 로깅
+    request_params = request.model_dump()
+    # date 객체는 JSON 직렬화가 안되므로 문자열로 변환
+    if request_params.get("start_date"):
+        request_params["start_date"] = str(request_params["start_date"])
+    if request_params.get("end_date"):
+        request_params["end_date"] = str(request_params["end_date"])
+        
+    logger.info(f"[Error Code 통계] 요청 파라미터:\n{json.dumps(request_params, indent=2, ensure_ascii=False)}")
     
     try:
-        # 시간 형식 검증
-        try:
-            start_time = datetime.strptime(request.down_start_time, "%Y-%m-%d %H:%M:%S")
-            end_time = datetime.strptime(request.down_end_time, "%Y-%m-%d %H:%M:%S")
-        except ValueError as e:
-            logger.error(f"[에러 타입 통계] 시간 형식 오류: {e}")
-            raise HTTPException(
-                status_code=400,
-                detail="시간 형식이 올바르지 않습니다. 'YYYY-MM-DD HH:MM:SS' 형식을 사용하세요."
-            )
-        
-        # 시작 시간이 종료 시간보다 늦으면 오류
-        if start_time > end_time:
-            raise HTTPException(
-                status_code=400,
-                detail="시작 시간이 종료 시간보다 늦을 수 없습니다."
-            )
-        
         # 데이터베이스 연결 확인
         if not db.test_connection():
-            logger.error("[에러 타입 통계] 데이터베이스 연결 실패")
-            raise HTTPException(
-                status_code=503,
-                detail="데이터베이스에 연결할 수 없습니다."
-            )
+            logger.error("[Error Code 통계] 데이터베이스 연결 실패")
+            raise HTTPException(status_code=503, detail="데이터베이스에 연결할 수 없습니다.")
         
-        # SQL 쿼리 생성 및 실행
-        query, bind_params = _build_error_type_stats_query(request)
-        logger.info(f"[에러 타입 통계] 쿼리 생성 완료")
-        logger.debug(f"[에러 타입 통계] 쿼리: {query}")
-        logger.debug(f"[에러 타입 통계] 바인드 파라미터: {bind_params}")
-        
-        # 쿼리 실행
-        results = _execute_error_type_stats_query(query, bind_params)
-        logger.info(f"[에러 타입 통계] 쿼리 실행 완료 - {len(results)}건 반환")
-        
-        # 응답 데이터 변환
-        stats_data = []
-        for row in results:
-            error_type = row.get('error_type') or row.get('ERROR_TYPE')
-            down_cnt = row.get('down_cnt') or row.get('DOWN_CNT') or 0
-            total_time = row.get('total_down_time_minutes') or row.get('TOTAL_DOWN_TIME_MINUTES') or 0.0
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
             
-            stats_data.append(ErrorTypeStatItem(
-                error_type=error_type,
-                down_cnt=int(down_cnt),
-                total_down_time_minutes=float(total_time)
-            ))
-        
-        logger.info(f"[에러 타입 통계] 처리 완료 - {len(stats_data)}개 에러 타입")
-        
-        return ErrorTypeStatsResponse(
-            success=True,
-            data=stats_data,
-            total_count=len(stats_data)
-        )
-        
+            # 1. 기본 컬럼 정의 (항상 조회 및 그룹핑 대상이 될 수 있는 후보들)
+            # (컬럼명, 셀렉트절 표현식, 그룹바이절 표현식, 필수여부)
+            columns_map = {
+                'process': ('process_id', 'n.process_id', 'p.process_name', 'n.process_id, p.process_name'),
+                'model': ('model_id', 'n.model_id', 'm.model_name', 'n.model_id, m.model_name'),
+                'eqp': ('eqp_id', 'n.eqp_id', 'e.eqp_name', 'n.eqp_id, e.eqp_name'),
+                'error': ('error_code', 'n.error_code', 'ec.error_desc', 'n.error_code, ec.error_desc'),
+            }
+            
+            # 2. 동적 쿼리 구성을 위한 리스트
+            select_items = []
+            group_by_items = []
+            order_by_items = []
+            
+            # 3. 기간(Period) 처리
+            if request.group_by == 'month':
+                select_items.append("TO_CHAR(n.down_start_time, 'YYYY-MM') AS period")
+                group_by_items.append("TO_CHAR(n.down_start_time, 'YYYY-MM')")
+                order_by_items.append("period ASC")
+            elif request.group_by == 'day':
+                select_items.append("TO_CHAR(n.down_start_time, 'YYYY-MM-DD') AS period")
+                group_by_items.append("TO_CHAR(n.down_start_time, 'YYYY-MM-DD')")
+                order_by_items.append("period ASC")
+            else:
+                select_items.append("NULL AS period")
+            
+            # 4. 차원(Dimension) 처리 - 요청에 값이 있거나 group_by에 포함된 경우만 선택
+            # Process는 필수라고 가정 (항상 포함)
+            select_items.extend(["n.process_id", "p.process_name"])
+            group_by_items.append(columns_map['process'][3])
+            order_by_items.append("n.process_id")
+
+            # Model (request에 있거나, group_by가 'eqp' 이상 상세 레벨일 때 포함)
+            # group_by가 'process'일 때는 제외
+            if request.model_id or request.group_by in ['eqp', 'error_code', 'model'] or (request.group_by not in ['process', 'month', 'day']):
+                select_items.extend(["n.model_id", "m.model_name"])
+                group_by_items.append(columns_map['model'][3])
+                order_by_items.append("n.model_id")
+            else:
+                select_items.extend(["NULL AS model_id", "NULL AS model_name"])
+
+            # Equipment (request에 있거나, group_by가 'eqp' 이상 상세 레벨일 때 포함)
+            if request.eqp_id or request.group_by in ['eqp', 'error_code'] or (request.group_by not in ['process', 'month', 'day', 'model']):
+                select_items.extend(["n.eqp_id", "e.eqp_name"])
+                group_by_items.append(columns_map['eqp'][3])
+                order_by_items.append("n.eqp_id")
+            else:
+                select_items.extend(["NULL AS eqp_id", "NULL AS eqp_name"])
+                
+            # Error Code (request에 있거나, group_by가 'error_code'인 경우)
+            # group_by가 'process', 'eqp', 'model' 일 때는 제외
+            if request.error_code or request.group_by == 'error_code' or (request.group_by not in ['process', 'eqp', 'model', 'month', 'day']):
+                select_items.extend(["n.error_code", "ec.error_desc AS error_des"])
+                group_by_items.append(columns_map['error'][3])
+                order_by_items.append("n.error_code")
+            else:
+                select_items.extend(["NULL AS error_code", "NULL AS error_des"])
+
+            # 5. SQL 조합
+            select_clause = ",\n                    ".join(select_items)
+            group_by_clause = ",\n                    ".join(group_by_items)
+            order_by_clause = ", ".join(order_by_items)
+            
+            sql = f"""
+                SELECT
+                    {select_clause},
+                    COUNT(*) AS event_cnt,
+                    SUM(n.down_time_minutes) AS total_down_time_minutes
+                FROM INFORM_NOTE n
+                LEFT JOIN PROCESS p ON n.process_id = p.process_id
+                LEFT JOIN EQUIPMENT e ON n.eqp_id = e.eqp_id
+                LEFT JOIN MODEL m ON n.model_id = m.model_id
+                LEFT JOIN ERROR_CODE ec ON n.error_code = ec.error_code
+                WHERE (:start_date IS NULL OR n.down_start_time >= TO_DATE(:start_date, 'YYYY-MM-DD'))
+                  AND (:end_date IS NULL OR n.down_start_time < TO_DATE(:end_date, 'YYYY-MM-DD') + 1)
+                  AND (:process_id IS NULL OR n.process_id = :process_id)
+                  AND (:model_id IS NULL OR n.model_id = :model_id)
+                  AND (:eqp_id IS NULL OR n.eqp_id = :eqp_id)
+                  AND (:error_code IS NULL OR n.error_code = :error_code)
+                  AND n.down_type_id = 1
+                GROUP BY
+                    {group_by_clause}
+                ORDER BY
+                    {order_by_clause}
+            """
+            
+            final_sql = sql # 이미 f-string으로 완성됨
+            start_date_str = request.start_date.strftime('%Y-%m-%d') if request.start_date else None
+            end_date_str = request.end_date.strftime('%Y-%m-%d') if request.end_date else None
+            
+            # 쿼리 실행
+            cursor.execute(final_sql, {
+                "start_date": start_date_str,
+                "end_date": end_date_str,
+                "process_id": request.process_id,
+                "model_id": request.model_id,
+                "eqp_id": request.eqp_id,
+                "error_code": request.error_code
+            })
+            
+            # 결과 조회
+            rows = cursor.fetchall()
+            cursor.close()
+            
+            # 결과를 응답 모델로 변환
+            result_list = []
+            for row in rows:
+                result_list.append(ErrorCodeStatsItem(
+                    period=row[0],
+                    process_id=row[1],
+                    process_name=row[2],
+                    model_id=row[3],    # 순서 주의: SELECT 순서 변경됨 (Process -> Model -> Eqp -> Error)
+                    model_name=row[4],
+                    eqp_id=row[5],
+                    eqp_name=row[6],
+                    error_code=row[7],
+                    error_des=row[8],
+                    event_cnt=row[9],
+                    total_down_time_minutes=float(row[10]) if row[10] is not None else None
+                ))
+            
+            # 응답 데이터 JSON 로깅
+            response_content = [item.model_dump() for item in result_list]
+            logger.info(f"[Error Code 통계] 응답 데이터 ({len(result_list)}건):\n{json.dumps(response_content, indent=2, ensure_ascii=False)}")
+            
+            return ErrorCodeStatsResponse(list=result_list)
+    
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"[에러 타입 통계] 오류 발생: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail=f"에러 타입 통계 조회 중 오류가 발생했습니다: {str(e)}"
-        )
+        logger.error(f"[Error Code 통계] 조회 중 오류 발생: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"통계 조회 중 오류가 발생했습니다: {str(e)}")
 
 
-def _build_error_type_stats_query(request: ErrorTypeStatsRequest) -> Tuple[str, List]:
+@app.post(
+    "/api/v1/informnote/history/pm",
+    response_model=PMHistoryResponse,
+    tags=["통계"]
+)
+async def get_pm_history(request: PMHistoryRequest):
     """
-    에러 타입 통계 쿼리 생성
+    PM(장비 점검) 이력 조회 엔드포인트 (down_type_id=0)
     
-    Args:
-        request: 요청 모델
-    
-    Returns:
-        (SQL 쿼리 문자열, 바인드 파라미터 리스트)
+    - **start_date**: 조회 시작일 (선택)
+    - **end_date**: 조회 종료일 (선택)
+    - **process_id**: 공정 ID (선택)
+    - **eqp_id**: 장비 ID (선택)
+    - **limit**: 조회할 최대 건수 (기본값 10, 최근 순)
     """
-    # SELECT 절
-    select_clause = """
-        SELECT 
-            error_code as error_type,
-            COUNT(*) as down_cnt,
-            SUM(down_time_minutes) as total_down_time_minutes
-        FROM INFORM_NOTE
-    """
-    
-    # WHERE 절 생성
-    where_conditions = []
-    bind_params = []
-    param_index = 1
-    
-    # 필수 조건: 시간 범위
-    where_conditions.append(f"down_start_time >= TO_TIMESTAMP(:{param_index}, 'YYYY-MM-DD HH24:MI:SS')")
-    bind_params.append(request.down_start_time)
-    param_index += 1
-    
-    where_conditions.append(f"down_start_time <= TO_TIMESTAMP(:{param_index}, 'YYYY-MM-DD HH24:MI:SS')")
-    bind_params.append(request.down_end_time)
-    param_index += 1
-    
-    # 선택 조건들
-    if request.site_id:
-        where_conditions.append(f"site_id = :{param_index}")
-        bind_params.append(request.site_id)
-        param_index += 1
-    
-    if request.factory_id:
-        where_conditions.append(f"factory_id = :{param_index}")
-        bind_params.append(request.factory_id)
-        param_index += 1
-    
-    if request.line_id:
-        where_conditions.append(f"line_id = :{param_index}")
-        bind_params.append(request.line_id)
-        param_index += 1
-    
-    if request.process_id:
-        where_conditions.append(f"process_id = :{param_index}")
-        bind_params.append(request.process_id)
-        param_index += 1
-    
-    if request.model_id:
-        where_conditions.append(f"model_id = :{param_index}")
-        bind_params.append(request.model_id)
-        param_index += 1
-    
-    if request.eqp_id:
-        where_conditions.append(f"eqp_id = :{param_index}")
-        bind_params.append(request.eqp_id)
-        param_index += 1
-    
-    # ERROR_CODE가 NULL이 아닌 것만 조회
-    where_conditions.append("error_code IS NOT NULL")
-    
-    # WHERE 절 조합
-    where_clause = "WHERE " + " AND ".join(where_conditions)
-    
-    # GROUP BY 절
-    group_by_clause = "GROUP BY error_code"
-    
-    # ORDER BY 절 (건수 내림차순)
-    order_by_clause = "ORDER BY down_cnt DESC"
-    
-    # 최종 쿼리 조합
-    query = f"{select_clause.strip()} {where_clause} {group_by_clause} {order_by_clause}".strip()
-    query = " ".join(query.split())  # 중복 공백 제거
-    
-    return query, bind_params
-
-
-def _execute_error_type_stats_query(query: str, bind_params: List) -> List[Dict]:
-    """
-    에러 타입 통계 쿼리 실행
-    
-    Args:
-        query: SQL 쿼리
-        bind_params: 바인드 파라미터
-    
-    Returns:
-        쿼리 결과 리스트
-    """
-    logger.info(f"[에러 타입 통계 쿼리 실행] 시작")
+    # 요청 파라미터 JSON 로깅
+    request_params = request.model_dump()
+    if request_params.get("start_date"):
+        request_params["start_date"] = str(request_params["start_date"])
+    if request_params.get("end_date"):
+        request_params["end_date"] = str(request_params["end_date"])
+        
+    logger.info(f"[PM 이력] 요청 파라미터:\n{json.dumps(request_params, indent=2, ensure_ascii=False)}")
     
     try:
         with db.get_connection() as conn:
             cursor = conn.cursor()
             
-            # 쿼리 실행
-            if bind_params:
-                cursor.execute(query, bind_params)
-            else:
-                cursor.execute(query)
+            sql = """
+                SELECT
+                    TO_CHAR(n.down_start_time, 'YYYY-MM-DD') as down_date,
+                    dt.down_type_name,
+                    n.down_time_minutes
+                FROM INFORM_NOTE n
+                LEFT JOIN DOWN_TYPE dt ON n.down_type_id = dt.down_type_id
+                WHERE (:start_date IS NULL OR n.down_start_time >= TO_DATE(:start_date, 'YYYY-MM-DD'))
+                  AND (:end_date IS NULL OR n.down_start_time < TO_DATE(:end_date, 'YYYY-MM-DD') + 1)
+                  AND (:process_id IS NULL OR n.process_id = :process_id)
+                  AND (:eqp_id IS NULL OR n.eqp_id = :eqp_id)
+                  AND n.down_type_id = 0  -- PM(SCHEDULED)만 조회
+                ORDER BY n.down_start_time DESC
+                FETCH FIRST :limit_val ROWS ONLY
+            """
             
-            # 컬럼명 가져오기
-            columns = [desc[0] for desc in cursor.description]
+            start_date_str = request.start_date.strftime('%Y-%m-%d') if request.start_date else None
+            end_date_str = request.end_date.strftime('%Y-%m-%d') if request.end_date else None
             
-            # 결과 가져오기
+            # limit 값이 없으면 기본값 사용 (물론 모델에서 기본값이 있지만 안전장치)
+            limit_val = request.limit if request.limit else 10
+            
+            cursor.execute(sql, {
+                "start_date": start_date_str,
+                "end_date": end_date_str,
+                "process_id": request.process_id,
+                "eqp_id": request.eqp_id,
+                "limit_val": limit_val
+            })
+            
             rows = cursor.fetchall()
-            
-            # 딕셔너리 리스트로 변환 (대소문자 모두 지원)
-            results = []
-            for row in rows:
-                result_dict = {}
-                for i, col in enumerate(columns):
-                    value = row[i]
-                    # TIMESTAMP를 문자열로 변환
-                    if hasattr(value, 'strftime'):
-                        value = value.strftime('%Y-%m-%d %H:%M:%S')
-                    # 대소문자 모두 저장 (호환성)
-                    result_dict[col] = value
-                    result_dict[col.lower()] = value
-                results.append(result_dict)
-            
             cursor.close()
             
-            logger.info(f"[에러 타입 통계 쿼리 실행] 완료 - {len(results)}행 반환")
-            return results
+            result_list = []
+            for row in rows:
+                result_list.append(PMHistoryItem(
+                    down_date=row[0],
+                    down_type=row[1] if row[1] else "SCHEDULED",
+                    down_time_minutes=float(row[2]) if row[2] is not None else 0.0
+                ))
             
+            logger.info(f"[PM 이력] 조회 결과: {len(result_list)}건")
+            return PMHistoryResponse(list=result_list)
+
     except Exception as e:
-        logger.error(f"[에러 타입 통계 쿼리 실행] 오류 발생: {e}", exc_info=True)
-        raise
+        logger.error(f"[PM 이력] 조회 중 오류 발생: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"PM 이력 조회 중 오류가 발생했습니다: {str(e)}")
+
+
+@app.post(
+    "/api/v1/informnote/search",
+    response_model=SearchResponse,
+    tags=["조회"]
+)
+async def search_inform_notes(request: SearchRequest):
+    """
+    상세 조치 내역 검색 엔드포인트
+    
+    - **operator**: 작업자 이름 (선택)
+    - **status_id**: 상태 (0: 진행중, 1: 완료) (선택)
+    - **process_id**: 공정 ID (선택)
+    - **eqp_id**: 장비 ID (선택)
+    """
+    request_params = request.model_dump()
+    if request_params.get("start_date"):
+        request_params["start_date"] = str(request_params["start_date"])
+    if request_params.get("end_date"):
+        request_params["end_date"] = str(request_params["end_date"])
+        
+    logger.info(f"[상세 검색] 요청 파라미터:\n{json.dumps(request_params, indent=2, ensure_ascii=False)}")
+    
+    try:
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            sql = """
+                SELECT
+                    n.informnote_id,
+                    TO_CHAR(n.down_start_time, 'YYYY-MM-DD HH24:MI:SS') as down_start_time,
+                    p.process_name,
+                    e.eqp_name,
+                    n.error_code,
+                    ec.error_desc,
+                    n.act_content,
+                    n.operator,
+                    n.status_id,
+                    s.status_name
+                FROM INFORM_NOTE n
+                LEFT JOIN PROCESS p ON n.process_id = p.process_id
+                LEFT JOIN EQUIPMENT e ON n.eqp_id = e.eqp_id
+                LEFT JOIN ERROR_CODE ec ON n.error_code = ec.error_code
+                LEFT JOIN STATUS s ON n.status_id = s.status_id
+                WHERE (:start_date IS NULL OR n.down_start_time >= TO_DATE(:start_date, 'YYYY-MM-DD'))
+                  AND (:end_date IS NULL OR n.down_start_time < TO_DATE(:end_date, 'YYYY-MM-DD') + 1)
+                  AND (:process_id IS NULL OR n.process_id = :process_id)
+                  AND (:eqp_id IS NULL OR n.eqp_id = :eqp_id)
+                  AND (:operator IS NULL OR n.operator = :operator)
+                  AND (:status_id IS NULL OR n.status_id = :status_id)
+                ORDER BY n.down_start_time DESC
+                FETCH FIRST :limit_val ROWS ONLY
+            """
+            
+            start_date_str = request.start_date.strftime('%Y-%m-%d') if request.start_date else None
+            end_date_str = request.end_date.strftime('%Y-%m-%d') if request.end_date else None
+            limit_val = request.limit if request.limit else 20
+            
+            cursor.execute(sql, {
+                "start_date": start_date_str,
+                "end_date": end_date_str,
+                "process_id": request.process_id,
+                "eqp_id": request.eqp_id,
+                "operator": request.operator,
+                "status_id": request.status_id,
+                "limit_val": limit_val
+            })
+            
+            rows = cursor.fetchall()
+            cursor.close()
+            
+            result_list = []
+            for row in rows:
+                # status_name이 있으면 쓰고, 없으면 status_id로 추론 (0: IN_PROGRESS, 1: COMPLETED)
+                status_str = row[9]
+                if not status_str:
+                    status_str = "COMPLETED" if row[8] == 1 else "IN_PROGRESS" if row[8] == 0 else "UNKNOWN"
+                
+                result_list.append(SearchItem(
+                    informnote_id=row[0],
+                    down_start_time=row[1],
+                    process_name=row[2],
+                    eqp_name=row[3],
+                    error_code=row[4],
+                    error_desc=row[5],
+                    act_content=row[6],
+                    operator=row[7],
+                    status=status_str
+                ))
+            
+            logger.info(f"[상세 검색] 조회 결과: {len(result_list)}건")
+            return SearchResponse(list=result_list)
+
+    except Exception as e:
+        logger.error(f"[상세 검색] 조회 중 오류 발생: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"상세 조회 중 오류가 발생했습니다: {str(e)}")
 
 
 @app.post("/ask", response_model=AnswerResponse, tags=["질문-답변"])
@@ -405,27 +535,9 @@ async def ask_question(request: QuestionRequest, http_request: Request):
     질문을 받고 답변을 제공하는 엔드포인트
     
     Dify 워크플로우에서 HTTP Request 노드를 통해 호출됩니다.
-    Dify LLM이 질문을 분류한 후, DB 정보가 필요한 경우 백엔드로 전송됩니다.
     
-    전체 흐름:
-    1. 사용자 질문 → Dify LLM이 내용 분류
-    2. Dify → HTTP Request → 백엔드 서버 (/ask)
-    3. 백엔드에서 질문 분석 및 공정정보 추출
-    4. Oracle DB 쿼리 실행 (DB 정보가 필요한 경우)
-    5. 결과를 Dify에 반환 (answer 필드)
-    6. Dify가 최종 답변 생성
-    
-    Request Body:
-    - question: 사용자의 질문 (Dify input 변수, 필수)
-    - context: 추가 컨텍스트 정보 (선택사항)
-    - filters: Dify LLM이 추출한 공정정보 필터 (선택사항, 존재 시 DB 조회)
-    
-    Response:
-    - answer: 생성된 답변 (Dify output 변수로 사용)
-    - question: 원본 질문
-    - success: 처리 성공 여부
-    - process_specific: 공정정보 특정 가능 여부
-    - data_count: 조회된 데이터 건수
+    - **question**: 사용자의 질문 (Dify에서 전달된 input 변수)
+    - **context**: 추가 컨텍스트 정보 (선택사항)
     """
     try:
         # 1단계: 요청 정보 로깅
@@ -434,64 +546,39 @@ async def ask_question(request: QuestionRequest, http_request: Request):
         logger.info(f"요청 URL: {http_request.url}")
         logger.info(f"요청 Method: {http_request.method}")
         
+        # 원본 요청 본문 로깅
+        try:
+            body = await http_request.body()
+            body_str = body.decode('utf-8') if body else 'empty'
+            logger.info(f"원본 요청 Body: {body_str}")
+        except Exception as e:
+            logger.warning(f"요청 Body 읽기 실패: {e}")
+        
         # 파싱된 요청 정보
         question = request.question.strip() if request.question else ""
         context = request.context.strip() if request.context else None
         
-        logger.info(f"질문: {question}")
-        if context:
-            logger.info(f"컨텍스트: {context[:100]}...")
+        logger.info(f"파싱된 질문: {question}")
+        logger.info(f"파싱된 컨텍스트: {context}")
         
         # 2단계: 입력 검증
         if not question:
             logger.error("[오류] 질문이 비어있습니다.")
-            raise HTTPException(
-                status_code=400, 
-                detail="질문이 비어있습니다. 'question' 필드는 필수입니다."
-            )
+            logger.error(f"요청 전체 내용: {request.model_dump()}")
+            raise HTTPException(status_code=400, detail="질문이 비어있습니다.")
         
-        # 3단계: Dify가 제공한 키워드 기반 공정정보 확인
-        logger.info(f"[답변 생성 시작] 질문: '{question[:100]}...'")
+        # 3단계: 답변 생성 시작
+        logger.info(f"[답변 생성 시작] 질문: '{question}'")
+        answer = await generate_answer(question, context)
         
-        if request.filters:
-            process_info = request.filters.to_process_info()
-            logger.info("[공정정보 입력] Dify LLM 필터 사용")
-        else:
-            process_info = ProcessInfo()
-            logger.info("[공정정보 입력] 필터 미제공 → DB 조회 생략 예정")
-        
-        is_specific = process_info.is_specific()
-        logger.info(f"[공정정보 처리] 특정 가능: {is_specific}")
-        if is_specific:
-            logger.info(f"[공정정보 처리] 추출된 정보: {process_info.to_dict()}")
-        
-        data_count = None
-        
-        # 4단계: DB 조회 필요 여부에 따른 분기 처리
-        if is_specific:
-            # DB 조회 필요 + 공정정보 인식됨 → Oracle DB 쿼리 실행
-            logger.info("[처리 경로] 공정정보 특정 가능 → Oracle DB 쿼리 실행")
-            answer, data_count = await generate_answer_with_process_info(
-                question, process_info, context
-            )
-        else:
-            # DB 조회 불필요 또는 공정정보 인식 안 됨 → Dify로 전달
-            logger.info("[처리 경로] 공정정보 특정 불가 → Dify로 전달")
-            answer = await generate_answer(question, context)
-            data_count = None
-        
-        # 5단계: 응답 반환 (Dify로 전달)
+        # 4단계: 응답 반환
         logger.info(f"[답변 생성 완료] 답변 길이: {len(answer)} 문자")
-        if data_count is not None:
-            logger.info(f"[답변 생성 완료] 조회된 데이터: {data_count}건")
         logger.info("=" * 80)
         
         return AnswerResponse(
             question=question,
             answer=answer,
-            success=True,
-            process_specific=is_specific,
-            data_count=data_count
+            success=True
         )
     
     except HTTPException:
@@ -503,319 +590,102 @@ async def ask_question(request: QuestionRequest, http_request: Request):
         logger.error(f"[치명적 오류] 질문 처리 중 예외 발생")
         logger.error(f"오류 메시지: {str(e)}")
         logger.error(f"오류 타입: {type(e).__name__}")
+        logger.error(f"요청 정보: {request.model_dump() if hasattr(request, 'model_dump') else str(request)}")
         logger.error("=" * 80, exc_info=True)
-        
-        # Dify에 전달할 수 있는 형식으로 에러 메시지 반환
-        error_answer = (
-            f"질문을 처리하는 중 오류가 발생했습니다: {str(e)}\n"
-            "시스템 관리자에게 문의하세요."
-        )
-        
-        return AnswerResponse(
-            question=request.question if hasattr(request, 'question') else "",
-            answer=error_answer,
-            success=False,
-            process_specific=None,
-            data_count=None
-        )
-
-
-async def generate_answer_with_process_info(
-    question: str, 
-    process_info: ProcessInfo, 
-    context: Optional[str] = None
-) -> Tuple[str, int]:
-    """
-    공정정보가 특정 가능한 경우의 답변 생성
-    
-    처리 순서:
-    1. Oracle DB에서 공정정보 기반 데이터 조회
-    2. 조회 결과를 기반으로 답변 생성
-    3. Dify API 호출 (선택사항, 컨텍스트로 사용)
-    """
-    logger.info(f"[공정정보 기반 답변] 시작 - 질문: '{question[:50]}...'")
-    logger.info(f"[공정정보 기반 답변] 추출된 정보: {process_info.to_dict()}")
-    
-    try:
-        # 데이터베이스 연결 확인
-        if not db.test_connection():
-            logger.error("[공정정보 기반 답변] 데이터베이스 연결 실패")
-            return "데이터베이스에 연결할 수 없습니다. 시스템 관리자에게 문의하세요.", 0
-        
-        logger.info("[공정정보 기반 답변] 데이터베이스 연결 성공")
-        
-        # 쿼리 생성 및 실행
-        query, bind_params = query_builder.build_query(process_info)
-        results = query_builder.execute_query(query, bind_params, limit=50)
-        
-        logger.info(f"[공정정보 기반 답변] 쿼리 결과: {len(results)}건")
-        
-        if not results:
-            # 결과가 없는 경우
-            answer = f"조건에 맞는 다운타임 정보를 찾을 수 없습니다.\n\n"
-            answer += f"검색 조건:\n"
-            if process_info.site_id:
-                answer += f"- 사이트: {process_info.site_id}\n"
-            if process_info.factory_id:
-                answer += f"- 공장: {process_info.factory_id}\n"
-            if process_info.line_id:
-                answer += f"- 라인: {process_info.line_id}\n"
-            if process_info.process_id:
-                answer += f"- 공정: {process_info.process_id}\n"
-            if process_info.model_id:
-                answer += f"- 모델: {process_info.model_id}\n"
-            if process_info.eqp_id:
-                answer += f"- 장비: {process_info.eqp_id}\n"
-            if process_info.down_type:
-                answer += f"- 다운타임 유형: {process_info.down_type}\n"
-            if process_info.status_id:
-                answer += f"- 상태: {process_info.status_id}\n"
-            if process_info.error_code:
-                answer += f"- 에러 코드: {process_info.error_code}\n"
-            if process_info.down_time_minutes:
-                answer += f"- 다운타임 시간: {process_info.down_time_minutes}분\n"
-            if process_info.down_time_min:
-                answer += f"- 최소 다운타임: {process_info.down_time_min}분 이상\n"
-            if process_info.down_time_max:
-                answer += f"- 최대 다운타임: {process_info.down_time_max}분 이하\n"
-            if process_info.start_time_from or process_info.start_time_to:
-                answer += f"- 시간 범위: {process_info.start_time_from or '시작'} ~ {process_info.start_time_to or '끝'}\n"
-            
-            return answer, 0
-        
-        # 통계 정보 조회
-        stats = query_builder.get_statistics(process_info)
-        
-        # 답변 생성
-        answer = _format_process_answer(results, stats, process_info, question)
-        data_count = len(results)
-        
-        # Dify 워크플로우에서 이미 처리하므로 여기서는 DB 결과만 반환
-        logger.info(f"[공정정보 기반 답변] 완료 - 답변 길이: {len(answer)} 문자, 데이터: {data_count}건")
-        return answer, data_count
-        
-    except Exception as e:
-        logger.error(f"[공정정보 기반 답변] 오류 발생: {e}", exc_info=True)
-        error_msg = (
-            f"공정정보 기반 답변 생성 중 오류가 발생했습니다: {str(e)}\n"
-            "시스템 관리자에게 문의하세요."
-        )
-        return error_msg, 0
-
-
-def _format_process_answer(
-    results: list, 
-    stats: dict, 
-    process_info: ProcessInfo, 
-    question: str
-) -> str:
-    """공정정보 기반 답변 포맷팅"""
-    answer_parts = []
-    
-    # 헤더
-    answer_parts.append("=" * 70)
-    answer_parts.append("📊 다운타임 정보 조회 결과")
-    answer_parts.append("=" * 70)
-    
-    # 검색 조건 요약
-    search_conditions = []
-    if process_info.site_id:
-        search_conditions.append(f"사이트: {process_info.site_id}")
-    if process_info.factory_id:
-        search_conditions.append(f"공장: {process_info.factory_id}")
-    if process_info.line_id:
-        search_conditions.append(f"라인: {process_info.line_id}")
-    if process_info.process_id:
-        search_conditions.append(f"공정: {process_info.process_id}")
-    if process_info.model_id:
-        search_conditions.append(f"모델: {process_info.model_id}")
-    if process_info.eqp_id:
-        search_conditions.append(f"장비: {process_info.eqp_id}")
-    if process_info.down_type:
-        down_type_kr = "계획" if process_info.down_type == "SCHEDULED" else "비계획"
-        search_conditions.append(f"다운타임 유형: {down_type_kr}")
-    if process_info.status_id:
-        status_kr = "완료" if process_info.status_id == "COMPLETED" else "진행중"
-        search_conditions.append(f"상태: {status_kr}")
-    if process_info.error_code:
-        search_conditions.append(f"에러 코드: {process_info.error_code}")
-    if process_info.down_time_min:
-        search_conditions.append(f"다운타임: {process_info.down_time_min}분 이상")
-    if process_info.down_time_max:
-        search_conditions.append(f"다운타임: {process_info.down_time_max}분 이하")
-    if process_info.start_time_from or process_info.start_time_to:
-        time_range = f"{process_info.start_time_from or '시작'} ~ {process_info.start_time_to or '끝'}"
-        search_conditions.append(f"기간: {time_range}")
-    
-    if search_conditions:
-        answer_parts.append(f"\n🔍 검색 조건: {', '.join(search_conditions)}")
-    
-    # 통계 정보
-    if stats.get('total_count', 0) > 0:
-        answer_parts.append(f"\n📈 통계 정보")
-        answer_parts.append("-" * 70)
-        
-        total_count = int(stats.get('total_count', 0))
-        total_minutes = stats.get('total_minutes', 0)
-        avg_minutes = stats.get('avg_minutes', 0)
-        min_minutes = stats.get('min_minutes', 0)
-        max_minutes = stats.get('max_minutes', 0)
-        scheduled_count = int(stats.get('scheduled_count', 0))
-        unscheduled_count = int(stats.get('unscheduled_count', 0))
-        completed_count = int(stats.get('completed_count', 0))
-        in_progress_count = int(stats.get('in_progress_count', 0))
-        
-        answer_parts.append(f"  • 총 건수: {total_count:,}건")
-        answer_parts.append(f"  • 총 다운타임: {total_minutes:,.1f}분 ({total_minutes/60:,.2f}시간)")
-        answer_parts.append(f"  • 평균 다운타임: {avg_minutes:.1f}분")
-        answer_parts.append(f"  • 최소/최대: {min_minutes:.1f}분 / {max_minutes:.1f}분")
-        answer_parts.append(f"  • 계획/비계획: {scheduled_count:,}건 / {unscheduled_count:,}건")
-        answer_parts.append(f"  • 완료/진행중: {completed_count:,}건 / {in_progress_count:,}건")
-            
-    # 상세 정보 (최대 10건)
-    if results:
-        answer_parts.append(f"\n📋 상세 정보 (최근 {min(len(results), 10)}건)")
-        answer_parts.append("-" * 70)
-        
-        for i, result in enumerate(results[:10], 1):
-            # Oracle DB는 컬럼명을 대문자로 반환하므로 대소문자 모두 확인
-            def get_value(result_dict, key):
-                """대소문자 구분 없이 값 가져오기"""
-                return result_dict.get(key.lower()) or result_dict.get(key.upper()) or result_dict.get(key)
-            
-            informnote_id = get_value(result, 'informnote_id') or 'N/A'
-            
-            # 주요 정보를 한 줄로 요약
-            site_id = get_value(result, 'site_id')
-            factory_id = get_value(result, 'factory_id')
-            process_id = get_value(result, 'process_id')
-            line_id = get_value(result, 'line_id')
-            eqp_id = get_value(result, 'eqp_id')
-            
-            location_parts = []
-            if site_id:
-                location_parts.append(f"사이트: {site_id}")
-            if factory_id:
-                location_parts.append(f"공장: {factory_id}")
-            if line_id:
-                location_parts.append(f"라인: {line_id}")
-            if process_id:
-                location_parts.append(f"공정: {process_id}")
-            if eqp_id:
-                location_parts.append(f"장비: {eqp_id}")
-            
-            location_str = " | ".join(location_parts) if location_parts else "위치 정보 없음"
-            
-            answer_parts.append(f"\n[{i}] 다운타임 ID: {informnote_id}")
-            answer_parts.append(f"    위치: {location_str}")
-            
-            down_start_time = get_value(result, 'down_start_time')
-            down_end_time = get_value(result, 'down_end_time')
-            down_time_minutes = get_value(result, 'down_time_minutes')
-            
-            if down_start_time:
-                time_info = f"시작: {down_start_time}"
-                if down_end_time:
-                    time_info += f" | 종료: {down_end_time}"
-                if down_time_minutes is not None:
-                    hours = int(down_time_minutes // 60)
-                    minutes = int(down_time_minutes % 60)
-                    if hours > 0:
-                        time_info += f" | 지속: {hours}시간 {minutes}분 ({down_time_minutes:.1f}분)"
-                    else:
-                        time_info += f" | 지속: {minutes}분"
-                answer_parts.append(f"    시간: {time_info}")
-            
-            down_type = get_value(result, 'down_type')
-            error_code = get_value(result, 'error_code')
-            status_id = get_value(result, 'status_id')
-            
-            status_parts = []
-            if down_type:
-                down_type_kr = "계획" if down_type == "SCHEDULED" else "비계획"
-                status_parts.append(f"유형: {down_type_kr}")
-            if error_code:
-                status_parts.append(f"에러: {error_code}")
-            if status_id:
-                status_kr = "완료" if status_id == "COMPLETED" else "진행중"
-                status_parts.append(f"상태: {status_kr}")
-            
-            if status_parts:
-                answer_parts.append(f"    상태: {' | '.join(status_parts)}")
-        
-        if len(results) > 10:
-            answer_parts.append(f"\n💡 참고: 총 {len(results)}건 중 최근 10건만 표시했습니다.")
-    
-    answer_parts.append("\n" + "=" * 70)
-    
-    return "\n".join(answer_parts)
+        raise HTTPException(status_code=500, detail=f"서버 오류: {str(e)}")
 
 
 async def generate_answer(question: str, context: Optional[str] = None) -> str:
     """
-    공정정보를 특정할 수 없는 경우의 답변 생성
+    질문에 대한 답변 생성
     
     처리 순서:
-    1. Dify API 호출 시도 (설정된 경우) - Dify 워크플로우에서 최종 답변 생성
-    2. Dify 실패 시 기본 답변 반환
-    
-    Note: 공정정보를 특정할 수 없는 일반 질문은 Dify로 전달하여 처리합니다.
+    1. Dify API 호출 (설정된 경우)
+    2. Oracle DB 기반 답변 생성 (Dify 실패 시 또는 Dify 미설정 시)
     """
-    logger.info(f"[일반 답변 생성] 시작 - 질문: '{question[:100]}...'")
-    logger.info("[처리 경로] 공정정보 인식 안 됨 → Dify로 전달")
+    logger.info(f"[답변 생성] 시작 - 질문: '{question[:50]}...' (전체 길이: {len(question)})")
     
-    # Dify API 호출 시도 (Dify 워크플로우에서 최종 처리)
+    # 1단계: Dify API 호출 시도
     if is_dify_enabled():
-        logger.info("[일반 답변] Dify API 호출 시도")
-        logger.info(f"[일반 답변] Dify API Base: {settings.DIFY_API_BASE}")
+        logger.info("[Dify API 호출] Dify 연동이 활성화되어 있습니다.")
+        logger.info(f"[Dify API 호출] Dify API Base: {settings.DIFY_API_BASE}")
         try:
-            logger.info("[일반 답변] Dify API로 답변 요청 중...")
+            logger.info("[Dify API 호출] Dify API로 답변 요청 중...")
             answer = await request_answer(question, context)
-            logger.info(f"[일반 답변] Dify API 성공! 답변 길이: {len(answer)} 문자")
+            logger.info(f"[Dify API 호출] 성공! 답변 길이: {len(answer)} 문자")
+            logger.info(f"[Dify API 호출] 답변 미리보기: {answer[:100]}...")
             return answer
         except DifyClientError as exc:
-            logger.warning(f"[일반 답변] Dify API 호출 실패: {exc}")
-            logger.info("[일반 답변] 기본 답변으로 대체합니다.")
+            logger.warning(f"[Dify API 호출] 실패: {exc}")
+            logger.info("[Dify API 호출] Oracle DB 로직으로 대체합니다.")
         except Exception as exc:
-            logger.error(f"[일반 답변] Dify API 예상치 못한 오류: {exc}", exc_info=True)
-            logger.info("[일반 답변] 기본 답변으로 대체합니다.")
+            logger.error(f"[Dify API 호출] 예상치 못한 오류: {exc}", exc_info=True)
+            logger.info("[Dify API 호출] Oracle DB 로직으로 대체합니다.")
     else:
-        logger.info("[일반 답변] Dify 연동이 비활성화되어 있습니다.")
+        logger.info("[Dify API 호출] Dify 연동이 비활성화되어 있습니다.")
+        logger.info("[Dify API 호출] Oracle DB 로직을 사용합니다.")
 
-    # 기본 답변 생성 (Dify 실패 시 또는 Dify 미설정 시)
-    logger.info("[일반 답변] 기본 답변 생성")
+    # 2단계: Oracle DB 기반 답변 생성 (Dify 실패 시 또는 Dify 미설정 시)
+    logger.info("[Oracle DB] 데이터베이스 기반 답변 생성 시작")
+    try:
+        # 데이터베이스 연결 확인
+        if not db.test_connection():
+            logger.error("[Oracle DB] 데이터베이스 연결 실패")
+            return "데이터베이스에 연결할 수 없습니다. 시스템 관리자에게 문의하세요."
+        
+        logger.info("[Oracle DB] 데이터베이스 연결 성공")
+        
+        # 데이터베이스에서 관련 정보 조회
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            # 예시: 질문을 로그에 저장하거나 관련 데이터 조회
+            # 실제 구현에 맞게 수정 필요
+            cursor.execute("SELECT SYSDATE FROM DUAL")
+            result = cursor.fetchone()
+            cursor.close()
+            
+            logger.info(f"[Oracle DB] 데이터 조회 완료: {result}")
+            
+            # 간단한 답변 생성 (실제로는 더 복잡한 로직 필요)
+            if "시간" in question or "날짜" in question:
+                answer = f"현재 데이터베이스 시간: {result[0] if result else '알 수 없음'}"
+            elif "연결" in question or "상태" in question:
+                answer = "데이터베이스 연결이 정상적으로 작동하고 있습니다."
+            else:
+                answer = f"질문 '{question}'에 대한 답변을 생성했습니다. (데이터베이스 연결 확인됨)"
+            
+            logger.info(f"[Oracle DB] 답변 생성 완료: {answer[:100]}...")
+            return answer
     
-    # 데이터베이스 연결 확인
-    db_connected = db.test_connection()
-    
-    if db_connected:
-        answer = (
-            f"질문을 받았습니다: '{question}'\n\n"
-            "공정정보를 특정할 수 없는 일반 질문입니다. "
-            "더 구체적인 정보(사이트, 공장, 공정, 장비 등)를 포함해 주시면 "
-            "정확한 다운타임 정보를 조회할 수 있습니다.\n\n"
-            "예시:\n"
-            "- 'ICH 사이트의 FAC_M16 공장에서 PROC_PH 공정 다운타임 알려줘'\n"
-            "- '비계획 다운타임 2시간 이상인 경우 조회'\n"
-            "- 'MDL_KE_PRO 모델의 SCHEDULED 다운타임 통계'"
-        )
-    else:
-        answer = (
-            f"질문을 받았습니다: '{question}'\n\n"
-            "현재 데이터베이스에 연결할 수 없습니다. "
-            "시스템 관리자에게 문의하세요."
-        )
-    
-    logger.info(f"[일반 답변] 완료 - 답변 길이: {len(answer)} 문자")
-    return answer
+    except Exception as e:
+        logger.error(f"[Oracle DB] 답변 생성 중 오류: {e}", exc_info=True)
+        error_msg = f"질문을 처리하는 중 오류가 발생했습니다: {str(e)}"
+        logger.error(f"[Oracle DB] 오류 메시지 반환: {error_msg}")
+        return error_msg
 
 
 if __name__ == "__main__":
     import uvicorn
+    
+    # ngrok 설정을 위한 환경변수 또는 플래그 확인이 좋겠지만, 
+    # 사용자 요청에 따라 직접 통합합니다.
+    try:
+        from pyngrok import ngrok
+        
+        # ngrok 터널 생성 (포트 8000)
+        # 주의: 최초 실행 시 ngrok 바이너리가 설치됩니다.
+        # ngrok auth token이 설정되어 있지 않으면 세션 만료 시간이 있을 수 있습니다.
+        public_url = ngrok.connect(8000).public_url
+        logger.info(f"ngrok tunnel opened: {public_url} -> http://localhost:8000")
+        print(f"\n[ngrok] Public URL: {public_url}\n")
+        
+    except Exception as e:
+        logger.warning(f"ngrok 실행 실패: {e}")
+
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
         port=8000,
-        reload=settings.DEBUG
+        reload=False  # ngrok 안정성을 위해 리로드 비활성화
     )
-
