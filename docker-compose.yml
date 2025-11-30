@@ -3,13 +3,15 @@ version: "3.8"
 services:
   # Oracle Database 서비스
   oracle-db:
-    image: gvenzl/oracle-xe:23-slim
+    image: gvenzl/oracle-free:23-slim
     container_name: oracle-db
     ports:
       - "1521:1521"
     environment:
       - ORACLE_PASSWORD=oracle
       - ORACLE_DATABASE=FREEPDB1
+      - APP_USER=oracleuser
+      - APP_USER_PASSWORD=oracle
     volumes:
       - oracle-data:/opt/oracle/oradata
     healthcheck:
@@ -31,7 +33,7 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - ORACLE_DSN=oracle-db:1521/FREEPDB1
-      - ORACLE_USER=system
+      - ORACLE_USER=oracleuser
       - ORACLE_PASSWORD=oracle
       - SKIP_DB_BOOTSTRAP=${SKIP_DB_BOOTSTRAP:-0}
     env_file:

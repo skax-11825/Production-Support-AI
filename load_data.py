@@ -238,12 +238,12 @@ def load_inform_notes():
         INSERT INTO {table_name} (
             informnote_id, site_id, factory_id, line_id, process_id,
             eqp_id, model_id, down_start_time, down_end_time, down_time_minutes,
-            down_type, error_code, act_prob_reason, act_content,
+            down_type_id, error_code, act_prob_reason, act_content,
             act_start_time, act_end_time, operator, first_detector, status_id, link
         ) VALUES (
             :informnote_id, :site_id, :factory_id, :line_id, :process_id,
             :eqp_id, :model_id, :down_start_time, :down_end_time, :down_time_minutes,
-            :down_type, :error_code, :act_prob_reason, :act_content,
+            :down_type_id, :error_code, :act_prob_reason, :act_content,
             :act_start_time, :act_end_time, :operator, :first_detector, :status_id, :link
         )
     """
@@ -253,6 +253,10 @@ def load_inform_notes():
         down_start, down_end = _normalize_times(row.get('down_start_time'), row.get('down_end_time'), f"row {idx} down")
         act_start, act_end = _normalize_times(row.get('act_start_time'), row.get('act_end_time'), f"row {idx} act")
         
+        # 엑셀의 ID 값을 그대로 사용 (매핑 제거)
+        down_type_val = _clean_number(row.get('down_type_id'))
+        status_val = _clean_number(row.get('status_id'))
+
         record = {
             'informnote_id': _clean(row.get('inform_note_id')),
             'site_id': _clean(row.get('site_id')),
@@ -264,7 +268,7 @@ def load_inform_notes():
             'down_start_time': down_start,
             'down_end_time': down_end,
             'down_time_minutes': _clean_number(row.get('down_time_minutes')),
-            'down_type': DOWN_TYPE_MAP.get(int(_clean_number(row.get('down_type_id')))) if _clean_number(row.get('down_type_id')) is not None else None,
+            'down_type_id': int(down_type_val) if down_type_val is not None else None,
             'error_code': _clean(row.get('error_code')),
             'act_prob_reason': _clean(row.get('act_prob_reason')),
             'act_content': _clean(row.get('act_content')),
@@ -272,7 +276,7 @@ def load_inform_notes():
             'act_end_time': act_end,
             'operator': _clean(row.get('operator')),
             'first_detector': _clean(row.get('first_detector')),
-            'status_id': STATUS_MAP.get(int(_clean_number(row.get('status_id')))) if _clean_number(row.get('status_id')) is not None else None,
+            'status_id': int(status_val) if status_val is not None else None,
             'link': f"https://gipms.com/reference/{idx + 1}",
         }
         records.append(record)

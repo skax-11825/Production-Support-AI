@@ -28,7 +28,7 @@ CREATE TABLE INFORM_NOTE (
     down_start_time TIMESTAMP,      -- 다운 시작 시각
     down_end_time TIMESTAMP,        -- 다운 종료 시각
     down_time_minutes NUMBER(10,2), -- 다운 지속 시간(분) - 소수점 허용
-    down_type VARCHAR2(20),         -- 다운 유형 (SCHEDULED / UNSCHEDULED)
+    down_type_id NUMBER(5),         -- 다운 유형 (FK)
     error_code VARCHAR2(50),       -- 에러 코드
     
     -- 조치 정보
@@ -42,7 +42,7 @@ CREATE TABLE INFORM_NOTE (
     first_detector VARCHAR2(50),    -- 최초 감지 주체
     
     -- 상태 정보
-    status_id VARCHAR2(20),         -- 상태 (COMPLETED / IN_PROGRESS)
+    status_id NUMBER(5),            -- 상태 (FK)
     link VARCHAR2(200),             -- 참고 링크
     
     -- 메타데이터
@@ -52,9 +52,11 @@ CREATE TABLE INFORM_NOTE (
     -- Primary Key 제약조건
     CONSTRAINT PK_INFORM_NOTE_TBL PRIMARY KEY (informnote_id),
     
+    -- Foreign Key 제약조건
+    CONSTRAINT FK_INFORM_NOTE_DOWN_TYPE FOREIGN KEY (down_type_id) REFERENCES DOWN_TYPE(DOWN_TYPE_ID),
+    CONSTRAINT FK_INFORM_NOTE_STATUS FOREIGN KEY (status_id) REFERENCES STATUS(STATUS_ID),
+    
     -- 체크 제약조건
-    CONSTRAINT CHK_DOWN_TYPE CHECK (down_type IN ('SCHEDULED', 'UNSCHEDULED', NULL)),
-    CONSTRAINT CHK_STATUS_ID CHECK (status_id IN ('COMPLETED', 'IN_PROGRESS', NULL)),
     CONSTRAINT CHK_DOWN_TIME CHECK (down_time_minutes >= 0 OR down_time_minutes IS NULL),
     CONSTRAINT CHK_TIME_ORDER CHECK (
         (down_start_time IS NULL AND down_end_time IS NULL) OR
@@ -87,6 +89,9 @@ CREATE INDEX IDX_INFORM_NOTE_DOWN_TIME_COL ON INFORM_NOTE(down_start_time, down_
 -- 상태별 조회
 CREATE INDEX IDX_INFORM_NOTE_STATUS_COL ON INFORM_NOTE(status_id);
 
+-- 다운 유형별 조회
+CREATE INDEX IDX_INFORM_NOTE_DOWN_TYPE_COL ON INFORM_NOTE(down_type_id);
+
 -- 복합 인덱스 (사이트-공장-라인 조회)
 CREATE INDEX IDX_INFORM_NOTE_SFL_COL ON INFORM_NOTE(site_id, factory_id, line_id);
 
@@ -108,7 +113,7 @@ COMMENT ON COLUMN INFORM_NOTE.model_id IS '장비 모델 ID';
 COMMENT ON COLUMN INFORM_NOTE.down_start_time IS '다운 시작 시각';
 COMMENT ON COLUMN INFORM_NOTE.down_end_time IS '다운 종료 시각';
 COMMENT ON COLUMN INFORM_NOTE.down_time_minutes IS '다운 지속 시간(분)';
-COMMENT ON COLUMN INFORM_NOTE.down_type IS '다운 유형: SCHEDULED(계획), UNSCHEDULED(비계획)';
+COMMENT ON COLUMN INFORM_NOTE.down_type_id IS '다운 유형 ID (FK)';
 COMMENT ON COLUMN INFORM_NOTE.error_code IS '에러 코드';
 COMMENT ON COLUMN INFORM_NOTE.act_prob_reason IS '추정 원인';
 COMMENT ON COLUMN INFORM_NOTE.act_content IS '조치 내용';
@@ -116,7 +121,7 @@ COMMENT ON COLUMN INFORM_NOTE.act_start_time IS '조치 시작 시각';
 COMMENT ON COLUMN INFORM_NOTE.act_end_time IS '조치 종료 시각';
 COMMENT ON COLUMN INFORM_NOTE.operator IS '작업자';
 COMMENT ON COLUMN INFORM_NOTE.first_detector IS '최초 감지 주체';
-COMMENT ON COLUMN INFORM_NOTE.status_id IS '상태: COMPLETED(완료), IN_PROGRESS(진행중)';
+COMMENT ON COLUMN INFORM_NOTE.status_id IS '상태 ID (FK)';
 COMMENT ON COLUMN INFORM_NOTE.link IS '참조 링크 (https://gipms.com/reference/번호)';
 COMMENT ON COLUMN INFORM_NOTE.created_at IS '레코드 생성 시각';
 COMMENT ON COLUMN INFORM_NOTE.updated_at IS '레코드 수정 시각';
