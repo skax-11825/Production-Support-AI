@@ -127,35 +127,163 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ### 1. 루트 엔드포인트
 - **GET** `/`
 - 서버 정보 반환
+- 응답:
+```json
+{
+  "message": "질문-답변 API 서버에 오신 것을 환영합니다.",
+  "version": "1.0.0"
+}
+```
 
 ### 2. 헬스 체크
 - **GET** `/health`
 - 서버 및 데이터베이스 연결 상태, Dify 활성화 여부 확인
+- 응답:
+```json
+{
+  "status": "healthy",
+  "database_connected": true,
+  "dify_enabled": true
+}
+```
 
-### 3. 질문하기
-- **POST** `/ask`
+### 3. ID 조회
+- **POST** `/lookup/ids`
+- process_name, model_name, eqp_name 또는 proc_keyword, model_keyword, eqp_keyword를 입력받아 해당하는 ID 값을 반환
 - 요청 본문:
 ```json
 {
-  "question": "ICH 사이트 FAC_M16 PROC_PH 다운타임 알려줘",
-  "context": "추가 컨텍스트 (선택사항)",
-  "filters": {
-    "site_id": "ICH",
-    "factory_id": "FAC_M16",
-    "process_id": "PROC_PH",
-    "down_type": "UNSCHEDULED",
-    "down_time_min": 60
-  }
+  "process_name": "Cleaning",
+  "model_name": "Lam Research",
+  "eqp_name": "ASML_PH_#001",
+  "proc_keyword": null,
+  "model_keyword": null,
+  "eqp_keyword": null,
+  "text": null,
+  "structured_output": null
 }
 ```
 - 응답:
 ```json
 {
-  "question": "질문 내용",
+  "process_id": "PROC_CLN",
+  "model_id": null,
+  "eqp_id": "M14-PH-001"
+}
+```
+
+### 4. 에러 코드 통계 조회
+- **POST** `/api/v1/informnote/stats/error-code`
+- 공정/장비 Error Code별 건수·Down Time 집계
+- 요청 본문:
+```json
+{
+  "start_date": "2025-06-01",
+  "end_date": "2025-06-30",
+  "process_id": "PROC_CLN",
+  "model_id": null,
+  "eqp_id": null,
+  "error_code": null,
+  "group_by": "error_code"
+}
+```
+- 응답:
+```json
+{
+  "list": [
+    {
+      "period": null,
+      "process_id": "PROC_CLN",
+      "process_name": "Cleaning",
+      "model_id": "MDL_LAM_COR",
+      "model_name": "Lam Research Coronus",
+      "eqp_id": "M14-CLN-016",
+      "eqp_name": "Lam_CLN_#016",
+      "error_code": "CLN_CHM_200",
+      "error_des": "Chemical Concentration Out of Spec",
+      "event_cnt": 1,
+      "total_down_time_minutes": 143.0
+    }
+  ]
+}
+```
+
+### 5. PM 이력 조회
+- **POST** `/api/v1/informnote/history/pm`
+- PM(장비 점검) 이력 조회 (down_type_id=0)
+- 요청 본문:
+```json
+{
+  "start_date": "2025-06-01",
+  "end_date": "2025-06-30",
+  "process_id": null,
+  "eqp_id": null,
+  "limit": 10
+}
+```
+- 응답:
+```json
+{
+  "list": [
+    {
+      "down_date": "2025-06-14",
+      "down_type": "Scheduled",
+      "down_time_minutes": 192.0
+    }
+  ]
+}
+```
+
+### 6. 상세 조치 내역 검색
+- **POST** `/api/v1/informnote/search`
+- 상세 조치 내역 검색
+- 요청 본문:
+```json
+{
+  "start_date": "2025-06-01",
+  "end_date": "2025-06-30",
+  "process_id": null,
+  "eqp_id": null,
+  "operator": null,
+  "status_id": null,
+  "limit": 20
+}
+```
+- 응답:
+```json
+{
+  "list": [
+    {
+      "informnote_id": "in_448",
+      "down_start_time": "2025-06-30 19:39:00",
+      "process_name": "Cleaning",
+      "eqp_name": "Lam_CLN_#029",
+      "error_code": "CLN_NZL_050",
+      "error_desc": "Spray Nozzle Pressure Low",
+      "act_content": "Nozzle Tip을 분해 세정하고 필요 시 교체",
+      "operator": "이영희 책임",
+      "status": "COMPLETED"
+    }
+  ]
+}
+```
+
+### 7. 질문하기
+- **POST** `/ask`
+- 질문을 받고 답변을 제공하는 엔드포인트
+- 요청 본문:
+```json
+{
+  "question": "Cleaning 공정의 다운타임을 알려줘",
+  "context": "추가 컨텍스트 (선택사항)"
+}
+```
+- 응답:
+```json
+{
+  "question": "Cleaning 공정의 다운타임을 알려줘",
   "answer": "답변 내용",
-  "success": true,
-  "process_specific": true,
-  "data_count": 15
+  "success": true
 }
 ```
 
