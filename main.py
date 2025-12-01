@@ -57,8 +57,11 @@ class AnswerResponse(BaseModel):
 
 class IdLookupRequest(BaseModel):
     """ID 조회 요청 모델"""
+    process_id: Optional[str] = None  # process_id (ID로 LIKE 검색)
     process_name: Optional[str] = None  # process_name (이름으로 LIKE 검색)
+    model_id: Optional[str] = None    # model_id (ID로 LIKE 검색)
     model_name: Optional[str] = None  # model_name (이름으로 LIKE 검색)
+    eqp_id: Optional[str] = None      # eqp_id (ID로 LIKE 검색)
     eqp_name: Optional[str] = None    # eqp_name (이름으로 LIKE 검색)
 
 
@@ -548,15 +551,18 @@ async def lookup_ids(request: IdLookupRequest):
     """
     ID 조회 API
     
-    process_name, model_name, eqp_name 중 하나 이상을 입력받아 해당하는 ID 값을 반환합니다.
-    이름으로 LIKE 패턴 검색을 수행하여 ID를 조회합니다.
+    process_id, process_name, model_id, model_name, eqp_id, eqp_name 중 하나 이상을 입력받아 해당하는 ID 값을 반환합니다.
+    _id 필드는 ID 컬럼으로, _name 필드는 이름 컬럼으로 LIKE 패턴 검색을 수행합니다.
     찾을 수 없는 경우 null을 반환합니다.
     
-    - **process_name**: 프로세스 이름 (선택, LIKE 패턴 검색)
-    - **model_name**: 모델 이름 (선택, LIKE 패턴 검색)
-    - **eqp_name**: 장비 이름 (선택, LIKE 패턴 검색)
+    - **process_id**: 프로세스 ID (선택, PROCESS_ID 컬럼으로 LIKE 패턴 검색)
+    - **process_name**: 프로세스 이름 (선택, PROCESS_NAME 컬럼으로 LIKE 패턴 검색)
+    - **model_id**: 모델 ID (선택, MODEL_ID 컬럼으로 LIKE 패턴 검색)
+    - **model_name**: 모델 이름 (선택, MODEL_NAME 컬럼으로 LIKE 패턴 검색)
+    - **eqp_id**: 장비 ID (선택, EQP_ID 컬럼으로 LIKE 패턴 검색)
+    - **eqp_name**: 장비 이름 (선택, EQP_NAME 컬럼으로 LIKE 패턴 검색)
     """
-    logger.info(f"[ID 조회] 요청 파라미터: process_name={request.process_name}, model_name={request.model_name}, eqp_name={request.eqp_name}")
+    logger.info(f"[ID 조회] 요청 파라미터: process_id={request.process_id}, process_name={request.process_name}, model_id={request.model_id}, model_name={request.model_name}, eqp_id={request.eqp_id}, eqp_name={request.eqp_name}")
     
     result = {
         "process_id": None,
@@ -573,83 +579,107 @@ async def lookup_ids(request: IdLookupRequest):
         with db.get_connection() as conn:
             cursor = conn.cursor()
             
-            # 1. process_id 조회 (process_name으로 LIKE 검색)
-            if request.process_name:
+            # 1. process_id 조회
+            process_input = request.process_id if request.process_id else request.process_name
+            if process_input:
                 try:
-                    process_value = request.process_name.strip() if request.process_name else None
+                    process_value = process_input.strip() if process_input else None
                     if not process_value:
-                        logger.warning(f"[ID 조회] process_name 입력값이 비어있음")
+                        logger.warning(f"[ID 조회] process 입력값이 비어있음")
                     else:
-                        logger.info(f"[ID 조회] process_name으로 LIKE 검색 시작: '{process_value}'")
-                        
-                        # LIKE 패턴으로 조회 (부분 일치)
-                        cursor.execute(
-                            "SELECT PROCESS_ID FROM PROCESS WHERE UPPER(TRIM(PROCESS_NAME)) LIKE UPPER('%' || TRIM(:1) || '%')",
-                            [process_value]
-                        )
+                        if request.process_id:
+                            logger.info(f"[ID 조회] process_id로 LIKE 검색 시작: '{process_value}'")
+                            # process_id로 LIKE 검색
+                            cursor.execute(
+                                "SELECT PROCESS_ID FROM PROCESS WHERE UPPER(TRIM(PROCESS_ID)) LIKE UPPER('%' || TRIM(:1) || '%')",
+                                [process_value]
+                            )
+                        else:
+                            logger.info(f"[ID 조회] process_name으로 LIKE 검색 시작: '{process_value}'")
+                            # process_name으로 LIKE 검색
+                            cursor.execute(
+                                "SELECT PROCESS_ID FROM PROCESS WHERE UPPER(TRIM(PROCESS_NAME)) LIKE UPPER('%' || TRIM(:1) || '%')",
+                                [process_value]
+                            )
                         rows = cursor.fetchall()
                         
                         if rows:
                             if len(rows) > 1:
-                                logger.warning(f"[ID 조회] process_name으로 여러 개 찾음 ({len(rows)}개), 첫 번째 사용: '{process_value}'")
+                                logger.warning(f"[ID 조회] process로 여러 개 찾음 ({len(rows)}개), 첫 번째 사용: '{process_value}'")
                             result["process_id"] = rows[0][0]
                             logger.info(f"[ID 조회] process_id를 LIKE 패턴으로 찾음: '{process_value}' -> {rows[0][0]}")
                         else:
-                            logger.warning(f"[ID 조회] process_name을 찾을 수 없음: '{process_value}'")
+                            logger.warning(f"[ID 조회] process를 찾을 수 없음: '{process_value}'")
                 except Exception as e:
-                    logger.error(f"[ID 조회] process_name 조회 중 오류: {e}", exc_info=True)
+                    logger.error(f"[ID 조회] process 조회 중 오류: {e}", exc_info=True)
             
-            # 2. model_id 조회 (model_name으로 LIKE 검색)
-            if request.model_name:
+            # 2. model_id 조회
+            model_input = request.model_id if request.model_id else request.model_name
+            if model_input:
                 try:
-                    model_value = request.model_name.strip() if request.model_name else None
+                    model_value = model_input.strip() if model_input else None
                     if not model_value:
-                        logger.warning(f"[ID 조회] model_name 입력값이 비어있음")
+                        logger.warning(f"[ID 조회] model 입력값이 비어있음")
                     else:
-                        logger.info(f"[ID 조회] model_name으로 LIKE 검색 시작: '{model_value}'")
-                        
-                        # LIKE 패턴으로 조회 (부분 일치)
-                        cursor.execute(
-                            "SELECT MODEL_ID FROM MODEL WHERE UPPER(TRIM(MODEL_NAME)) LIKE UPPER('%' || TRIM(:1) || '%')",
-                            [model_value]
-                        )
+                        if request.model_id:
+                            logger.info(f"[ID 조회] model_id로 LIKE 검색 시작: '{model_value}'")
+                            # model_id로 LIKE 검색
+                            cursor.execute(
+                                "SELECT MODEL_ID FROM MODEL WHERE UPPER(TRIM(MODEL_ID)) LIKE UPPER('%' || TRIM(:1) || '%')",
+                                [model_value]
+                            )
+                        else:
+                            logger.info(f"[ID 조회] model_name으로 LIKE 검색 시작: '{model_value}'")
+                            # model_name으로 LIKE 검색
+                            cursor.execute(
+                                "SELECT MODEL_ID FROM MODEL WHERE UPPER(TRIM(MODEL_NAME)) LIKE UPPER('%' || TRIM(:1) || '%')",
+                                [model_value]
+                            )
                         rows = cursor.fetchall()
                         
                         if rows:
                             if len(rows) > 1:
-                                logger.warning(f"[ID 조회] model_name으로 여러 개 찾음 ({len(rows)}개), 첫 번째 사용: '{model_value}'")
+                                logger.warning(f"[ID 조회] model로 여러 개 찾음 ({len(rows)}개), 첫 번째 사용: '{model_value}'")
                             result["model_id"] = rows[0][0]
                             logger.info(f"[ID 조회] model_id를 LIKE 패턴으로 찾음: '{model_value}' -> {rows[0][0]}")
                         else:
-                            logger.warning(f"[ID 조회] model_name을 찾을 수 없음: '{model_value}'")
+                            logger.warning(f"[ID 조회] model을 찾을 수 없음: '{model_value}'")
                 except Exception as e:
-                    logger.error(f"[ID 조회] model_name 조회 중 오류: {e}", exc_info=True)
+                    logger.error(f"[ID 조회] model 조회 중 오류: {e}", exc_info=True)
             
-            # 3. eqp_id 조회 (eqp_name으로 LIKE 검색)
-            if request.eqp_name:
+            # 3. eqp_id 조회
+            eqp_input = request.eqp_id if request.eqp_id else request.eqp_name
+            if eqp_input:
                 try:
-                    eqp_value = request.eqp_name.strip() if request.eqp_name else None
+                    eqp_value = eqp_input.strip() if eqp_input else None
                     if not eqp_value:
-                        logger.warning(f"[ID 조회] eqp_name 입력값이 비어있음")
+                        logger.warning(f"[ID 조회] eqp 입력값이 비어있음")
                     else:
-                        logger.info(f"[ID 조회] eqp_name으로 LIKE 검색 시작: '{eqp_value}'")
-                        
-                        # LIKE 패턴으로 조회 (부분 일치)
-                        cursor.execute(
-                            "SELECT EQP_ID FROM EQUIPMENT WHERE UPPER(TRIM(EQP_NAME)) LIKE UPPER('%' || TRIM(:1) || '%')",
-                            [eqp_value]
-                        )
+                        if request.eqp_id:
+                            logger.info(f"[ID 조회] eqp_id로 LIKE 검색 시작: '{eqp_value}'")
+                            # eqp_id로 LIKE 검색
+                            cursor.execute(
+                                "SELECT EQP_ID FROM EQUIPMENT WHERE UPPER(TRIM(EQP_ID)) LIKE UPPER('%' || TRIM(:1) || '%')",
+                                [eqp_value]
+                            )
+                        else:
+                            logger.info(f"[ID 조회] eqp_name으로 LIKE 검색 시작: '{eqp_value}'")
+                            # eqp_name으로 LIKE 검색
+                            cursor.execute(
+                                "SELECT EQP_ID FROM EQUIPMENT WHERE UPPER(TRIM(EQP_NAME)) LIKE UPPER('%' || TRIM(:1) || '%')",
+                                [eqp_value]
+                            )
                         rows = cursor.fetchall()
                         
                         if rows:
                             if len(rows) > 1:
-                                logger.warning(f"[ID 조회] eqp_name으로 여러 개 찾음 ({len(rows)}개), 첫 번째 사용: '{eqp_value}'")
+                                logger.warning(f"[ID 조회] eqp로 여러 개 찾음 ({len(rows)}개), 첫 번째 사용: '{eqp_value}'")
                             result["eqp_id"] = rows[0][0]
                             logger.info(f"[ID 조회] eqp_id를 LIKE 패턴으로 찾음: '{eqp_value}' -> {rows[0][0]}")
                         else:
-                            logger.warning(f"[ID 조회] eqp_name을 찾을 수 없음: '{eqp_value}'")
+                            logger.warning(f"[ID 조회] eqp를 찾을 수 없음: '{eqp_value}'")
                 except Exception as e:
-                    logger.error(f"[ID 조회] eqp_name 조회 중 오류: {e}", exc_info=True)
+                    logger.error(f"[ID 조회] eqp 조회 중 오류: {e}", exc_info=True)
             
             cursor.close()
         
