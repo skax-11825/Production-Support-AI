@@ -18,26 +18,24 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-DATA_FILE = Path(__file__).parent / 'normalized_data.xlsx'
+DATA_FILE = Path(__file__).parent / 'normalized_data_preprocessed.xlsx'
 
 # 레퍼런스 테이블 설정
 # 테이블 이름은 엑셀 시트 이름의 대문자 버전과 정확히 일치합니다
-# 예: 'site' 시트 -> 'SITE' 테이블, 'error_code' 시트 -> 'ERROR_CODE' 테이블
+# normalized_data_preprocessed.xlsx에는 site, factory, line 시트가 없으므로 제외
+# 예: 'process' 시트 -> 'PROCESS' 테이블, 'error_code' 시트 -> 'ERROR_CODE' 테이블
 REFERENCE_TABLE_CONFIG = {
-    'site': {'columns': {'site_id': 'site_id', 'site_name': 'site_name'}},
-    'factory': {'columns': {'factory_id': 'factory_id', 'factory_name': 'factory_name', 'site_id': 'site_id'}},
-    'line': {'columns': {'line_id': 'line_id', 'line_name': 'line_name', 'factory_id': 'factory_id'}},
     'process': {'columns': {'process_id': 'process_id', 'process_name': 'process_name', 'process_abbr': 'process_abbr'}},
     'model': {'columns': {'model_id': 'model_id', 'model_name': 'model_name', 'process_id': 'process_id', 'vendor': 'vendor'}},
     'equipment': {'columns': {'eqp_id': 'eqp_id', 'eqp_name': 'eqp_name', 'model_id': 'model_id', 'line_id': 'line_id'}},
     'error_code': {'columns': {'error_code': 'error_code', 'error_desc': 'error_desc', 'process_id': 'process_id'}},
-    'status': {'columns': {'status_id': 'status_id', 'status': 'status_name'}},
-    'down_type': {'columns': {'down_type_id': 'down_type_id', 'down_type': 'down_type_name'}},
+    'status': {'columns': {'status_id': 'status_id', 'status': 'status_name'}},  # 엑셀의 'status' 컬럼 -> DB의 'status_name' 컬럼
+    'down_type': {'columns': {'down_type_id': 'down_type_id', 'down_type': 'down_type_name'}},  # 엑셀의 'down_type' 컬럼 -> DB의 'down_type_name' 컬럼
 }
 
 # 용어 사전 MERGE SQL (테이블 이름은 동적으로 생성)
 def get_term_dict_merge_sql(table_name: str) -> str:
-    """용어 사전 MERGE SQL 생성 (테이블 이름 동적)"""
+    """용어 사전 MERGE SQL 생성 (테이블 이름 동적) - term_id 기준"""
     return f"""
 MERGE INTO {table_name} dst
 USING (SELECT :term_id AS term_id FROM dual) src
@@ -193,7 +191,26 @@ def load_term_dictionary(truncate: bool = False):
             if not record['term_id']:
                 logger.warning(f"{idx}번째 행: term_id 없음, 건너뜀")
                 continue
-            cursor.execute(merge_sql, record)
+            if not record['term_en']:
+                logger.warning(f"{idx}번째 행: term_en 없음, 건너뜀")
+                continue
+            
+            try:
+                cursor.execute(merge_sql, record)
+            except Exception as e:
+                error_msg = str(e)
+                # 중복된 term_en이 있는 경우, term_en 기준으로 DELETE 후 INSERT
+                if 'unique constraint' in error_msg.lower() and 'term_en' in error_msg.lower():
+                    try:
+                        # 기존 레코드 삭제 후 재삽입
+                        cursor.execute(f"DELETE FROM {table_name} WHERE term_en = :term_en", {'term_en': record['term_en']})
+                        cursor.execute(merge_sql, record)
+                        logger.debug(f"{idx}번째 행: term_en 중복으로 기존 레코드 삭제 후 재삽입")
+                    except Exception as e2:
+                        logger.warning(f"{idx}번째 행 처리 실패 (중복 처리 시도 후 실패): {e2}")
+                else:
+                    logger.warning(f"{idx}번째 행 처리 실패: {error_msg[:100]}")
+            
             if idx % 50 == 0:
                 logger.info(f"{idx}건 처리")
         
@@ -252,7 +269,7 @@ def _normalize_times(start_raw, end_raw, label: str):
 
 def load_inform_notes():
     """Inform Note 데이터 적재"""
-    sheet_name = 'Inform_note'
+    sheet_name = 'inform_note'  # 엑셀 시트 이름 그대로 사용 (소문자)
     # 테이블 이름은 엑셀 시트 이름의 대문자 버전과 정확히 일치
     table_name = sheet_name.upper()
     

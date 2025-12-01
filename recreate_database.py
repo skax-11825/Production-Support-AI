@@ -27,18 +27,16 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # 테이블 삭제 순서 (자식 테이블부터, 외래키 제약조건 고려)
+# normalized_data_preprocessed.xlsx에는 site, factory, line 시트가 없으므로 제외
 DROP_ORDER = [
     'INFORM_NOTE',           # 가장 많은 참조를 하는 테이블
-    'EQUIPMENT',            # MODEL, LINE 참조
-    'ERROR_CODE',          # PROCESS 참조
-    'MODEL',               # PROCESS 참조
-    'LINE',                # FACTORY 참조
-    'FACTORY',             # SITE 참조
+    'EQUIPMENT',            # MODEL 참조 (LINE은 엑셀에 없음)
+    'ERROR_CODE',           # PROCESS 참조
+    'MODEL',                # PROCESS 참조
     'FAB_TERMS_DICTIONARY', # 독립적
-    'SITE',                # 독립적
-    'PROCESS',             # 독립적
-    'STATUS',              # 독립적
-    'DOWN_TYPE',           # 독립적
+    'PROCESS',              # 독립적
+    'STATUS',               # 독립적
+    'DOWN_TYPE',            # 독립적
 ]
 
 # 테이블 생성 설정
