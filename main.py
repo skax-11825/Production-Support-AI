@@ -2,10 +2,10 @@
 질문-답변 API 서버
 FastAPI를 사용한 REST API 엔드포인트
 """
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict
 from datetime import date
 import logging
 import json
@@ -539,7 +539,7 @@ async def search_inform_notes(request: SearchRequest):
 
 
 @app.post("/ask", response_model=AnswerResponse, tags=["질문-답변"])
-async def ask_question(request: QuestionRequest, http_request: Request):
+async def ask_question(request: QuestionRequest):
     """
     질문을 받고 답변을 제공하는 엔드포인트
     """
