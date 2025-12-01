@@ -14,6 +14,7 @@ from utils import read_sql_file, split_sql_statements
 
 # load_data.py의 함수들 import
 from load_data import (
+    load_reference_dependencies,
     load_reference_tables,
     load_term_dictionary,
     load_inform_notes,
@@ -243,9 +244,10 @@ def main():
     print("  1. 기존 테이블 삭제")
     print("  2. 새 스키마로 테이블 생성")
     print("  3. 테이블 확인")
-    print("  4. 데이터 적재 (레퍼런스 테이블)")
-    print("  5. 데이터 적재 (용어 사전)")
-    print("  6. 데이터 적재 (Inform Note)")
+    print("  4. 데이터 적재 (참조 테이블: SITE, FACTORY, LINE)")
+    print("  5. 데이터 적재 (레퍼런스 테이블)")
+    print("  6. 데이터 적재 (용어 사전)")
+    print("  7. 데이터 적재 (Inform Note)")
     print("=" * 80)
     
     if not args.yes:
@@ -271,28 +273,37 @@ def main():
         sys.exit(1)
     
     # 1단계: 기존 테이블 삭제
-    print("\n[1/6] 기존 테이블 삭제 중...")
+    print("\n[1/7] 기존 테이블 삭제 중...")
     if not drop_all_tables():
         logger.error("테이블 삭제 실패")
         sys.exit(1)
     print("✓ 기존 테이블 삭제 완료")
     
     # 2단계: 새 테이블 생성
-    print("\n[2/6] 새 테이블 생성 중...")
+    print("\n[2/7] 새 테이블 생성 중...")
     if not create_all_tables():
         logger.error("테이블 생성 실패")
         sys.exit(1)
     print("✓ 새 테이블 생성 완료")
     
     # 3단계: 테이블 확인
-    print("\n[3/6] 생성된 테이블 확인 중...")
+    print("\n[3/7] 생성된 테이블 확인 중...")
     if not verify_tables():
         logger.error("테이블 확인 실패")
         sys.exit(1)
     print("✓ 테이블 확인 완료")
     
-    # 4단계: 레퍼런스 테이블 데이터 적재
-    print("\n[4/6] 레퍼런스 테이블 데이터 적재 중...")
+    # 4단계: 참조 테이블 (SITE, FACTORY, LINE) 데이터 적재
+    print("\n[4/7] 참조 테이블 (SITE, FACTORY, LINE) 데이터 적재 중...")
+    try:
+        load_reference_dependencies()
+        print("✓ 참조 테이블 데이터 적재 완료")
+    except Exception as e:
+        logger.error(f"참조 테이블 데이터 적재 실패: {e}", exc_info=True)
+        sys.exit(1)
+    
+    # 5단계: 레퍼런스 테이블 데이터 적재
+    print("\n[5/7] 레퍼런스 테이블 데이터 적재 중...")
     try:
         load_reference_tables()
         print("✓ 레퍼런스 테이블 데이터 적재 완료")
@@ -300,8 +311,8 @@ def main():
         logger.error(f"레퍼런스 테이블 데이터 적재 실패: {e}", exc_info=True)
         sys.exit(1)
     
-    # 5단계: 용어 사전 데이터 적재
-    print("\n[5/6] fab_terms_dictionary 데이터 적재 중...")
+    # 6단계: 용어 사전 데이터 적재
+    print("\n[6/7] fab_terms_dictionary 데이터 적재 중...")
     try:
         load_term_dictionary(truncate=True)
         print("✓ fab_terms_dictionary 데이터 적재 완료")
@@ -309,8 +320,8 @@ def main():
         logger.error(f"용어 사전 데이터 적재 실패: {e}", exc_info=True)
         sys.exit(1)
     
-    # 6단계: Inform Note 데이터 적재
-    print("\n[6/6] Inform_note 데이터 적재 중...")
+    # 7단계: Inform Note 데이터 적재
+    print("\n[7/7] Inform_note 데이터 적재 중...")
     try:
         load_inform_notes()
         print("✓ Inform_note 데이터 적재 완료")

@@ -25,7 +25,6 @@ DATA_FILE = Path(__file__).parent / 'normalized_data_preprocessed.xlsx'
 # 레퍼런스 테이블 설정
 # 테이블 이름은 엑셀 시트 이름을 대문자로 변환한 것과 정확히 일치합니다
 # 컬럼 매핑: {엑셀_컬럼명: DB_컬럼명}
-# 엑셀 컬럼명은 정확히 그대로 사용 (공백 포함)
 REFERENCE_TABLE_CONFIG = {
     'process': {
         'table': 'PROCESS',
@@ -77,7 +76,7 @@ REFERENCE_TABLE_CONFIG = {
     },
 }
 
-# 용어 사전 MERGE SQL (테이블 이름은 동적으로 생성)
+# 용어 사전 MERGE SQL
 def get_term_dict_merge_sql(table_name: str) -> str:
     """용어 사전 MERGE SQL 생성 (테이블 이름 동적) - term_id 기준"""
     return f"""
@@ -149,11 +148,10 @@ def load_reference_tables():
         columns_map = config['columns']
         
         try:
-            # 엑셀 시트 읽기 (컬럼명은 그대로 유지)
+            # 엑셀 시트 읽기
             df = pd.read_excel(DATA_FILE, sheet_name=sheet_name)
             
-            # 컬럼명 정확히 확인 및 매핑
-            # 엑셀 컬럼명을 소문자로 정규화하여 매핑 (공백 제거)
+            # 컬럼명 정확히 확인 (공백 제거하여 정규화)
             df.columns = [str(col).strip() for col in df.columns]
             
             # 빈 행 제거
@@ -189,7 +187,6 @@ def load_reference_tables():
             for idx, row in df.iterrows():
                 record = {}
                 for excel_col, db_col in columns_map.items():
-                    # 엑셀 컬럼명을 소문자로 정규화하여 찾기
                     excel_col_normalized = excel_col.lower()
                     if excel_col_normalized in excel_cols_lower:
                         actual_excel_col = excel_cols_lower[excel_col_normalized]
@@ -212,7 +209,7 @@ def load_reference_tables():
                 cursor.executemany(insert_sql, records)
                 logger.info(f"  ✓ {table_name} 테이블 {len(records)}건 삽입 완료")
                 
-                # 검증: 삽입된 행 수 확인
+                # 검증
                 cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
                 inserted_count = cursor.fetchone()[0]
                 logger.info(f"  ✓ 검증: {table_name} 테이블에 {inserted_count}건 확인")
@@ -227,6 +224,68 @@ def load_reference_tables():
             raise
 
 
+def load_reference_dependencies():
+    """엑셀에 없는 참조 테이블 (SITE, FACTORY, LINE) 데이터 적재"""
+    logger.info("=" * 80)
+    logger.info("참조 테이블 (SITE, FACTORY, LINE) 데이터 적재 시작")
+    logger.info("=" * 80)
+    
+    try:
+        # 엑셀 데이터에서 필요한 값 추출
+        df_note = pd.read_excel(DATA_FILE, sheet_name='inform_note')
+        
+        # 고유한 값 추출
+        site_ids = sorted(df_note['site_id'].dropna().unique())
+        factory_ids = sorted(df_note['factory_id'].dropna().unique())
+        line_ids = sorted(df_note['line_id'].dropna().unique())
+        
+        logger.info(f"  추출된 site_id: {site_ids}")
+        logger.info(f"  추출된 factory_id: {factory_ids}")
+        logger.info(f"  추출된 line_id: {line_ids}")
+        
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            # SITE 테이블 데이터 삽입
+            if site_ids:
+                cursor.execute("TRUNCATE TABLE SITE")
+                for site_id in site_ids:
+                    cursor.execute(
+                        "INSERT INTO SITE (SITE_ID, SITE_NAME) VALUES (:1, :2)",
+                        [site_id, site_id]  # SITE_NAME은 임시로 SITE_ID와 동일
+                    )
+                logger.info(f"  ✓ SITE 테이블 {len(site_ids)}건 삽입 완료")
+            
+            # FACTORY 테이블 데이터 삽입
+            if factory_ids and site_ids:
+                cursor.execute("TRUNCATE TABLE FACTORY")
+                # factory_id에서 site_id 추론 (예: FAC_M14 -> ICH)
+                default_site_id = site_ids[0]  # 첫 번째 site_id 사용
+                for factory_id in factory_ids:
+                    cursor.execute(
+                        "INSERT INTO FACTORY (FACTORY_ID, FACTORY_NAME, SITE_ID) VALUES (:1, :2, :3)",
+                        [factory_id, factory_id, default_site_id]
+                    )
+                logger.info(f"  ✓ FACTORY 테이블 {len(factory_ids)}건 삽입 완료")
+            
+            # LINE 테이블 데이터 삽입
+            if line_ids and factory_ids:
+                cursor.execute("TRUNCATE TABLE LINE")
+                default_factory_id = factory_ids[0]  # 첫 번째 factory_id 사용
+                for line_id in line_ids:
+                    cursor.execute(
+                        "INSERT INTO LINE (LINE_ID, LINE_NAME, FACTORY_ID) VALUES (:1, :2, :3)",
+                        [line_id, line_id, default_factory_id]
+                    )
+                logger.info(f"  ✓ LINE 테이블 {len(line_ids)}건 삽입 완료")
+            
+            cursor.close()
+            
+    except Exception as e:
+        logger.error(f"✗ 참조 테이블 적재 실패: {e}", exc_info=True)
+        raise
+
+
 def load_term_dictionary(truncate: bool = False):
     """반도체 용어 사전 데이터 적재"""
     sheet_name = 'fab_terms_dictionary'
@@ -237,21 +296,29 @@ def load_term_dictionary(truncate: bool = False):
     logger.info("=" * 80)
     
     try:
-        # 엑셀 시트 읽기
         df = pd.read_excel(DATA_FILE, sheet_name=sheet_name)
         
-        # 컬럼명 정확히 확인 (공백 포함)
-        # 'meaning_short ' 뒤에 공백이 있을 수 있으므로 strip()을 사용하되, 매핑은 명확히
+        # 컬럼명 정확히 확인 (공백 포함하여 처리)
+        original_columns = list(df.columns)
         df.columns = [str(col).strip() for col in df.columns]
         
-        # 빈 행 제거
+        # meaning_short 뒤 공백 처리
+        meaning_short_col = None
+        for orig_col in original_columns:
+            if str(orig_col).strip().lower() == 'meaning_short':
+                meaning_short_col = orig_col
+                break
+        
+        if meaning_short_col and meaning_short_col in df.columns:
+            # 컬럼명이 'meaning_short ' (공백 포함)인 경우 처리
+            df = df.rename(columns={meaning_short_col: 'meaning_short'})
+        
         df = df.dropna(how='all')
         
         logger.info(f"\n[{sheet_name} 시트 -> {table_name} 테이블]")
         logger.info(f"  데이터 행 수: {len(df)}")
         logger.info(f"  엑셀 컬럼: {list(df.columns)}")
         
-        # 필수 컬럼 확인
         required_cols = ['term_id', 'term_en', 'term_kor_reading', 'meaning_short', 'meaning_field']
         excel_cols_lower = {col.lower(): col for col in df.columns}
         
@@ -260,25 +327,18 @@ def load_term_dictionary(truncate: bool = False):
             logger.error(f"  ✗ 필수 컬럼이 없습니다: {missing_cols}")
             raise ValueError(f"{sheet_name} 시트에 필수 컬럼이 없습니다: {missing_cols}")
         
-        # 데이터 준비
         records = []
         for idx, row in df.iterrows():
-            # 엑셀 컬럼명에서 실제 컬럼 찾기 (소문자 정규화)
             term_id = _clean(row.get(excel_cols_lower.get('term_id', 'term_id')))
             term_en = _clean(row.get(excel_cols_lower.get('term_en', 'term_en')))
             term_kor_reading = _clean(row.get(excel_cols_lower.get('term_kor_reading', 'term_kor_reading')))
             meaning_short = _clean(row.get(excel_cols_lower.get('meaning_short', 'meaning_short')))
             meaning_field = _clean(row.get(excel_cols_lower.get('meaning_field', 'meaning_field')))
             
-            # 필수 필드 검증
-            if not term_id:
-                logger.warning(f"  행 {idx+2}: term_id 없음, 건너뜀")
-                continue
-            if not term_en:
-                logger.warning(f"  행 {idx+2}: term_en 없음, 건너뜀")
+            if not term_id or not term_en:
+                logger.warning(f"  행 {idx+2}: term_id 또는 term_en 없음, 건너뜀")
                 continue
             
-            # 검색 키워드 생성
             keywords = ' '.join(filter(None, [
                 term_en.lower() if term_en else None,
                 term_kor_reading,
@@ -296,70 +356,45 @@ def load_term_dictionary(truncate: bool = False):
         
         logger.info(f"  준비된 레코드: {len(records)}개")
         
-        # 데이터베이스에 MERGE
         with db.get_connection() as conn:
             cursor = conn.cursor()
             
-            # 트리거 비활성화 (데이터 적재 중 오류 방지)
             try:
                 cursor.execute(f"ALTER TRIGGER TRG_FAB_TERMS_DICTIONARY_UPD DISABLE")
-                logger.debug("  트리거 비활성화 완료")
-            except Exception as e:
-                logger.debug(f"  트리거 비활성화 실패 (무시): {e}")
+            except:
+                pass
             
             if truncate:
                 cursor.execute(f"TRUNCATE TABLE {table_name}")
                 logger.info(f"  ✓ {table_name} 테이블 TRUNCATE 완료")
             
             merge_sql = get_term_dict_merge_sql(table_name)
-            
             success_count = 0
+            
             for idx, record in enumerate(records, 1):
                 try:
                     cursor.execute(merge_sql, record)
                     success_count += 1
                 except Exception as e:
                     error_msg = str(e)
-                    # 중복된 term_en이 있는 경우, term_en 기준으로 DELETE 후 INSERT
                     if 'unique constraint' in error_msg.lower() and 'term_en' in error_msg.lower():
                         try:
                             cursor.execute(f"DELETE FROM {table_name} WHERE term_en = :term_en", {'term_en': record['term_en']})
                             cursor.execute(merge_sql, record)
                             success_count += 1
-                            logger.debug(f"  행 {idx+1}: term_en 중복으로 기존 레코드 삭제 후 재삽입")
-                        except Exception as e2:
-                            logger.warning(f"  행 {idx+1} 처리 실패 (중복 처리 시도 후 실패): {e2}")
+                        except:
+                            logger.warning(f"  행 {idx+1} 처리 실패")
                     else:
                         logger.warning(f"  행 {idx+1} 처리 실패: {error_msg[:100]}")
                 
                 if idx % 50 == 0:
                     logger.info(f"  {idx}건 처리 중...")
             
-            # 트리거 재활성화
             try:
                 cursor.execute(f"ALTER TRIGGER TRG_FAB_TERMS_DICTIONARY_UPD ENABLE")
-                logger.debug("  트리거 재활성화 완료")
-            except Exception as e:
-                logger.warning(f"  트리거 재활성화 실패: {e}")
-                # 트리거가 유효하지 않으면 삭제하고 재생성
-                try:
-                    cursor.execute(f"DROP TRIGGER TRG_FAB_TERMS_DICTIONARY_UPD")
-                    logger.info("  유효하지 않은 트리거 삭제 완료")
-                    # 트리거 재생성
-                    trigger_sql = """
-                    CREATE OR REPLACE TRIGGER TRG_FAB_TERMS_DICTIONARY_UPD
-                    BEFORE UPDATE ON FAB_TERMS_DICTIONARY
-                    FOR EACH ROW
-                    BEGIN
-                        :NEW.UPDATED_AT := SYSDATE;
-                    END;
-                    """
-                    cursor.execute(trigger_sql)
-                    logger.info("  트리거 재생성 완료")
-                except Exception as e2:
-                    logger.warning(f"  트리거 재생성 실패: {e2}")
+            except:
+                pass
             
-            # 검증: 삽입된 행 수 확인
             cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
             inserted_count = cursor.fetchone()[0]
             logger.info(f"  ✓ 검증: {table_name} 테이블에 {inserted_count}건 확인")
@@ -408,22 +443,16 @@ def load_inform_notes():
     logger.info("=" * 80)
     
     try:
-        # 엑셀 시트 읽기
         df = pd.read_excel(DATA_FILE, sheet_name=sheet_name)
-        
-        # 중복 컬럼명 처리
         df.columns = _dedup_columns(df.columns)
-        
-        # 빈 행 제거
         df = df.dropna(how='all')
         
         logger.info(f"\n[{sheet_name} 시트 -> {table_name} 테이블]")
         logger.info(f"  데이터 행 수: {len(df)}")
         logger.info(f"  엑셀 컬럼: {list(df.columns)}")
         
-        # 컬럼 매핑: 엑셀 컬럼명 -> DB 컬럼명
         column_mapping = {
-            'inform_note_id': 'INFORMNOTE_ID',  # 언더스코어 제거
+            'inform_note_id': 'INFORMNOTE_ID',
             'site_id': 'SITE_ID',
             'factory_id': 'FACTORY_ID',
             'line_id': 'LINE_ID',
@@ -444,8 +473,7 @@ def load_inform_notes():
             'status_id': 'STATUS_ID',
         }
         
-        # INSERT SQL 생성
-        db_columns = list(column_mapping.values()) + ['LINK']  # LINK는 생성
+        db_columns = list(column_mapping.values()) + ['LINK']
         col_placeholders = ', '.join(db_columns)
         bind_placeholders = ', '.join([f":{col}" for col in db_columns])
         insert_sql = f"""
@@ -453,12 +481,10 @@ def load_inform_notes():
             VALUES ({bind_placeholders})
         """
         
-        # 데이터 준비
         records = []
         excel_cols_lower = {col.lower(): col for col in df.columns}
         
         for idx, row in df.iterrows():
-            # 시간 정규화
             down_start, down_end = _normalize_times(
                 row.get(excel_cols_lower.get('down_start_time', 'down_start_time')),
                 row.get(excel_cols_lower.get('down_end_time', 'down_end_time')),
@@ -470,7 +496,6 @@ def load_inform_notes():
                 f"행 {idx+2} act"
             )
             
-            # 숫자 값 정리
             down_type_val = _clean_number(row.get(excel_cols_lower.get('down_type_id', 'down_type_id')))
             status_val = _clean_number(row.get(excel_cols_lower.get('status_id', 'status_id')))
             
@@ -497,7 +522,6 @@ def load_inform_notes():
                 'LINK': f"https://gipms.com/reference/{idx + 1}",
             }
             
-            # 필수 필드 검증
             if not record['INFORMNOTE_ID']:
                 logger.warning(f"  행 {idx+2}: inform_note_id 없음, 건너뜀")
                 continue
@@ -506,7 +530,6 @@ def load_inform_notes():
         
         logger.info(f"  준비된 레코드: {len(records)}개")
         
-        # 데이터베이스에 삽입
         with db.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(f"TRUNCATE TABLE {table_name}")
@@ -515,7 +538,6 @@ def load_inform_notes():
             cursor.executemany(insert_sql, records)
             logger.info(f"  ✓ {table_name} 테이블 {len(records)}건 삽입 완료")
             
-            # 검증: 삽입된 행 수 확인
             cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
             inserted_count = cursor.fetchone()[0]
             logger.info(f"  ✓ 검증: {table_name} 테이블에 {inserted_count}건 확인")
@@ -542,18 +564,23 @@ def main():
     if not db.test_connection():
         raise RuntimeError("Oracle DB 연결 실패")
     
-    # 레퍼런스 테이블 데이터 적재
-    print("\n[1/3] 레퍼런스 테이블 데이터 적재...")
+    # 1. 참조 테이블 (SITE, FACTORY, LINE) 먼저 적재
+    print("\n[0/4] 참조 테이블 (SITE, FACTORY, LINE) 데이터 적재...")
+    load_reference_dependencies()
+    print("✓ 참조 테이블 데이터 적재 완료")
+    
+    # 2. 레퍼런스 테이블 데이터 적재
+    print("\n[1/4] 레퍼런스 테이블 데이터 적재...")
     load_reference_tables()
     print("✓ 레퍼런스 테이블 데이터 적재 완료")
     
-    # 용어 사전 데이터 적재
-    print("\n[2/3] fab_terms_dictionary 데이터 적재...")
+    # 3. 용어 사전 데이터 적재
+    print("\n[2/4] fab_terms_dictionary 데이터 적재...")
     load_term_dictionary(truncate=True)
     print("✓ fab_terms_dictionary 데이터 적재 완료")
     
-    # Inform Note 데이터 적재
-    print("\n[3/3] Inform_note 데이터 적재...")
+    # 4. Inform Note 데이터 적재
+    print("\n[3/4] Inform_note 데이터 적재...")
     load_inform_notes()
     print("✓ Inform_note 데이터 적재 완료")
     
