@@ -75,14 +75,35 @@ DIFY_USER_ID=oracle-agent-user
 
 ## 실행 방법
 
-### 1. 연결 테스트 (선택사항)
+### 🚀 간편 실행 (권장)
+
+**Windows**: `start_server.bat` 파일을 더블클릭하거나 명령어 실행
+```cmd
+start_server.bat
+```
+
+**macOS/Linux**: `start_server.sh` 파일을 더블클릭하거나 터미널에서 실행
+```bash
+./start_server.sh
+```
+
+**플랫폼 독립적** (Windows/macOS/Linux 모두): `start_server.py` 실행
+```bash
+python3 start_server.py
+```
+
+또는 더블클릭 (Python이 기본 프로그램으로 설정된 경우)
+
+### 📝 수동 실행 방법
+
+#### 1. 연결 테스트 (선택사항)
 
 Docker Oracle DB 연결을 먼저 테스트하려면:
 ```bash
 python test_connection.py
 ```
 
-### 2. 개발 모드로 실행
+#### 2. 개발 모드로 실행
 
 ```bash
 python main.py
@@ -93,8 +114,11 @@ python main.py
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
+### 🌐 접속 주소
+
 서버가 실행되면 다음 주소에서 접근할 수 있습니다:
 - API 서버: http://localhost:8000
+- 헬스 체크: http://localhost:8000/health
 - API 문서: http://localhost:8000/docs
 - 대체 문서: http://localhost:8000/redoc
 
