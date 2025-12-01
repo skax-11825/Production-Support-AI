@@ -209,11 +209,40 @@ def extract_keyword_from_dify(request: IdLookupRequest) -> Dict[str, Optional[st
         str_val = str(value).strip()
         if not str_val or str_val.lower() == 'null':
             return None
-        # 변수 참조 패턴 제거 (예: '1764575467466.structured_output.process_keyword')
-        if '.' in str_val and any(kw in str_val.lower() for kw in ['keyword', 'output', 'variable', 'structured']):
+        
+        # OR 연산자(||)로 분리되어 있는 경우 처리
+        if '||' in str_val:
+            parts = [part.strip() for part in str_val.split('||')]
+            # 변수 참조가 아닌 실제 값만 추출
+            for part in parts:
+                if part and not is_variable_reference(part):
+                    logger.info(f"[키워드 추출] OR 연산자에서 실제 값 추출: '{part}' (전체: '{str_val}')")
+                    return part
+            # 모두 변수 참조인 경우
+            logger.warning(f"[키워드 추출] OR 연산자로 분리된 값이 모두 변수 참조: {str_val}")
+            return None
+        
+        # 변수 참조 패턴 확인
+        if is_variable_reference(str_val):
             logger.warning(f"[키워드 추출] 변수 참조 패턴 감지, 무시: {str_val}")
             return None
+        
         return str_val
+    
+    def is_variable_reference(value: str) -> bool:
+        """변수 참조 패턴인지 확인"""
+        if not value or not isinstance(value, str):
+            return False
+        value_lower = value.lower().strip()
+        # 변수 참조 패턴: 숫자.structured_output.keyword 또는 .keyword, .output 등
+        if '.' in value_lower:
+            # 점(.)으로 시작하거나, 숫자.xxx.xxx 패턴
+            if value_lower.startswith('.') or (
+                any(char.isdigit() for char in value_lower[:10]) and 
+                any(kw in value_lower for kw in ['structured_output', 'keyword', 'output', 'variable'])
+            ):
+                return True
+        return False
     
     # process_name 매핑
     process_value = (
@@ -345,6 +374,20 @@ async def lookup_ids(request: IdLookupRequest):
     return result
 
 
+def clean_request_value(value: Optional[str], field_name: str = "") -> Optional[str]:
+    """요청 값 정리: 변수 참조 패턴, null 문자열 처리"""
+    if value is None:
+        return None
+    str_val = str(value).strip()
+    if not str_val or str_val.lower() == 'null':
+        return None
+    # Dify 변수 참조 패턴 감지 ({{ ... }} 또는 http7.response.xxx)
+    if '{{' in str_val or '}}' in str_val or 'http' in str_val.lower() or '.response.' in str_val.lower():
+        logger.warning(f"[요청 값 정리] {field_name} 필드에 변수 참조 패턴 감지, 무시: {str_val}")
+        return None
+    return str_val
+
+
 @app.post(
     "/api/v1/informnote/stats/error-code",
     response_model=ErrorCodeStatsResponse,
@@ -356,6 +399,29 @@ async def get_error_code_stats(request: ErrorCodeStatsRequest):
     """
     if not db.test_connection():
         raise HTTPException(status_code=503, detail="데이터베이스에 연결할 수 없습니다.")
+    
+    # 요청 값 정리 및 로깅
+    cleaned_process_id = clean_request_value(request.process_id, "process_id")
+    cleaned_model_id = clean_request_value(request.model_id, "model_id")
+    cleaned_eqp_id = clean_request_value(request.eqp_id, "eqp_id")
+    cleaned_error_code = clean_request_value(request.error_code, "error_code")
+    
+    logger.info(f"[Error Code 통계] 요청 수신 - process_id: {cleaned_process_id}, model_id: {cleaned_model_id}, eqp_id: {cleaned_eqp_id}, error_code: {cleaned_error_code}, group_by: {request.group_by}")
+    
+    # error_code 필드에 장비명이나 공정명이 들어온 경우 감지
+    if cleaned_error_code:
+        # 장비명 패턴 (ASML_PH_#001, M14-PH-001 등)
+        if 'ASML' in cleaned_error_code.upper() or 'M14-' in cleaned_error_code or '#' in cleaned_error_code:
+            logger.warning(f"[Error Code 통계] error_code 필드에 장비명이 들어옴: {cleaned_error_code}, None으로 처리")
+            cleaned_error_code = None
+        # 공정명 패턴 (Cleaning, CMP 등)
+        elif cleaned_error_code.upper() in ['CLEANING', 'CMP', 'DIFFUSION', 'ETCH', 'PHOTOLITHOGRAPHY']:
+            logger.warning(f"[Error Code 통계] error_code 필드에 공정명이 들어옴: {cleaned_error_code}, None으로 처리")
+            cleaned_error_code = None
+    
+    # 모든 필터가 None인 경우 경고 (전체 데이터 조회됨)
+    if not any([cleaned_process_id, cleaned_model_id, cleaned_eqp_id, cleaned_error_code, request.start_date, request.end_date]):
+        logger.warning(f"[Error Code 통계] 모든 필터가 None입니다. 전체 데이터 조회됩니다. (원본 요청: process_id={request.process_id}, error_code={request.error_code})")
     
     try:
         # Period 처리
@@ -423,10 +489,10 @@ async def get_error_code_stats(request: ErrorCodeStatsRequest):
             cursor.execute(sql, {
                 "start_date": format_date_for_db(request.start_date),
                 "end_date": format_date_for_db(request.end_date),
-                "process_id": request.process_id,
-                "model_id": request.model_id,
-                "eqp_id": request.eqp_id,
-                "error_code": request.error_code
+                "process_id": cleaned_process_id,
+                "model_id": cleaned_model_id,
+                "eqp_id": cleaned_eqp_id,
+                "error_code": cleaned_error_code
             })
             
             rows = cursor.fetchall()
@@ -468,6 +534,19 @@ async def get_pm_history(request: PMHistoryRequest):
     """
     PM(장비 점검) 이력 조회 엔드포인트 (down_type_id=0)
     """
+    if not db.test_connection():
+        raise HTTPException(status_code=503, detail="데이터베이스에 연결할 수 없습니다.")
+    
+    # 요청 값 정리 및 로깅
+    cleaned_process_id = clean_request_value(request.process_id, "process_id")
+    cleaned_eqp_id = clean_request_value(request.eqp_id, "eqp_id")
+    
+    logger.info(f"[PM 이력] 요청 수신 - process_id: {cleaned_process_id}, eqp_id: {cleaned_eqp_id}, start_date: {request.start_date}, end_date: {request.end_date}, limit: {request.limit}")
+    
+    # 모든 필터가 None인 경우 경고
+    if not any([cleaned_process_id, cleaned_eqp_id, request.start_date, request.end_date]):
+        logger.warning(f"[PM 이력] 모든 필터가 None입니다. 전체 데이터 조회됩니다. (원본 요청: process_id={request.process_id}, eqp_id={request.eqp_id})")
+    
     sql = """
         SELECT
             TO_CHAR(n.down_start_time, 'YYYY-MM-DD') as down_date,
@@ -490,8 +569,8 @@ async def get_pm_history(request: PMHistoryRequest):
             cursor.execute(sql, {
                 "start_date": format_date_for_db(request.start_date),
                 "end_date": format_date_for_db(request.end_date),
-                "process_id": request.process_id,
-                "eqp_id": request.eqp_id,
+                "process_id": cleaned_process_id,
+                "eqp_id": cleaned_eqp_id,
                 "limit_val": request.limit or 10
             })
             
@@ -524,6 +603,20 @@ async def search_inform_notes(request: SearchRequest):
     """
     상세 조치 내역 검색 엔드포인트
     """
+    if not db.test_connection():
+        raise HTTPException(status_code=503, detail="데이터베이스에 연결할 수 없습니다.")
+    
+    # 요청 값 정리 및 로깅
+    cleaned_process_id = clean_request_value(request.process_id, "process_id")
+    cleaned_eqp_id = clean_request_value(request.eqp_id, "eqp_id")
+    cleaned_operator = clean_request_value(request.operator, "operator")
+    
+    logger.info(f"[상세 검색] 요청 수신 - process_id: {cleaned_process_id}, eqp_id: {cleaned_eqp_id}, operator: {cleaned_operator}, start_date: {request.start_date}, end_date: {request.end_date}, limit: {request.limit}")
+    
+    # 모든 필터가 None인 경우 경고
+    if not any([cleaned_process_id, cleaned_eqp_id, cleaned_operator, request.start_date, request.end_date]):
+        logger.warning(f"[상세 검색] 모든 필터가 None입니다. 전체 데이터 조회됩니다. (원본 요청: process_id={request.process_id}, eqp_id={request.eqp_id})")
+    
     sql = """
         SELECT
             n.informnote_id,
@@ -557,9 +650,9 @@ async def search_inform_notes(request: SearchRequest):
             cursor.execute(sql, {
                 "start_date": format_date_for_db(request.start_date),
                 "end_date": format_date_for_db(request.end_date),
-                "process_id": request.process_id,
-                "eqp_id": request.eqp_id,
-                "operator": request.operator,
+                "process_id": cleaned_process_id,
+                "eqp_id": cleaned_eqp_id,
+                "operator": cleaned_operator,
                 "status_id": request.status_id,
                 "limit_val": request.limit or 20
             })

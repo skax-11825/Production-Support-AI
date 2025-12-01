@@ -8,22 +8,24 @@ log() {
   echo "[bootstrap] $1"
 }
 
-run_with_prompt() {
-  local prompt="$1"
-  local script="$2"
-  log "실행: ${script}"
-  printf "%b" "${prompt}" | "${PROJECT_ROOT}/venv/bin/python" "${PROJECT_ROOT}/${script}"
-}
+# Python 경로 확인 (Docker에서는 시스템 Python 사용, 로컬에서는 venv 우선)
+if [ -f "${PROJECT_ROOT}/venv/bin/python" ]; then
+  PYTHON="${PROJECT_ROOT}/venv/bin/python"
+  log "venv Python 사용: ${PYTHON}"
+elif command -v python3 >/dev/null 2>&1; then
+  PYTHON="python3"
+  log "시스템 python3 사용: ${PYTHON}"
+elif command -v python >/dev/null 2>&1; then
+  PYTHON="python"
+  log "시스템 python 사용: ${PYTHON}"
+else
+  log "오류: Python을 찾을 수 없습니다."
+  exit 1
+fi
 
-run_plain() {
-  local script="$1"
-  log "실행: ${script}"
-  "${PROJECT_ROOT}/venv/bin/python" "${PROJECT_ROOT}/${script}"
-}
-
-# 통합된 스크립트 사용
-run_with_prompt "y\nyes\n" "setup_tables.py"
-run_plain "load_data.py"
+# DB 재구성 및 데이터 적재 (--yes 플래그로 자동 실행)
+log "DB 재구성 및 데이터 적재 시작..."
+"${PYTHON}" "${PROJECT_ROOT}/recreate_database.py" --yes
 
 log "Oracle DB 초기화 및 데이터 적재 완료"
 
