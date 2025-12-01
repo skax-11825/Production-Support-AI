@@ -57,12 +57,9 @@ class AnswerResponse(BaseModel):
 
 class IdLookupRequest(BaseModel):
     """ID 조회 요청 모델"""
-    process_id: Optional[str] = None  # process_id (ID로 LIKE 검색)
-    process_name: Optional[str] = None  # process_name (이름으로 LIKE 검색)
-    model_id: Optional[str] = None    # model_id (ID로 LIKE 검색)
-    model_name: Optional[str] = None  # model_name (이름으로 LIKE 검색)
-    eqp_id: Optional[str] = None      # eqp_id (ID로 LIKE 검색)
-    eqp_name: Optional[str] = None    # eqp_name (이름으로 LIKE 검색)
+    process_name: Optional[str] = None  # process_name (PROCESS_ID와 PROCESS_NAME 둘 다에서 LIKE 검색)
+    model_name: Optional[str] = None    # model_name (MODEL_ID와 MODEL_NAME 둘 다에서 LIKE 검색)
+    eqp_name: Optional[str] = None      # eqp_name (EQP_ID와 EQP_NAME 둘 다에서 LIKE 검색)
 
 
 class IdLookupResponse(BaseModel):
@@ -551,18 +548,15 @@ async def lookup_ids(request: IdLookupRequest):
     """
     ID 조회 API
     
-    process_id, process_name, model_id, model_name, eqp_id, eqp_name 중 하나 이상을 입력받아 해당하는 ID 값을 반환합니다.
-    _id 필드는 ID 컬럼으로, _name 필드는 이름 컬럼으로 LIKE 패턴 검색을 수행합니다.
+    process_name, model_name, eqp_name 중 하나 이상을 입력받아 해당하는 ID 값을 반환합니다.
+    각 _name 필드는 해당 ID 컬럼과 NAME 컬럼 둘 다에서 LIKE 패턴 검색을 수행합니다.
     찾을 수 없는 경우 null을 반환합니다.
     
-    - **process_id**: 프로세스 ID (선택, PROCESS_ID 컬럼으로 LIKE 패턴 검색)
-    - **process_name**: 프로세스 이름 (선택, PROCESS_NAME 컬럼으로 LIKE 패턴 검색)
-    - **model_id**: 모델 ID (선택, MODEL_ID 컬럼으로 LIKE 패턴 검색)
-    - **model_name**: 모델 이름 (선택, MODEL_NAME 컬럼으로 LIKE 패턴 검색)
-    - **eqp_id**: 장비 ID (선택, EQP_ID 컬럼으로 LIKE 패턴 검색)
-    - **eqp_name**: 장비 이름 (선택, EQP_NAME 컬럼으로 LIKE 패턴 검색)
+    - **process_name**: 프로세스 이름 (선택, PROCESS_ID와 PROCESS_NAME 둘 다에서 LIKE 패턴 검색)
+    - **model_name**: 모델 이름 (선택, MODEL_ID와 MODEL_NAME 둘 다에서 LIKE 패턴 검색)
+    - **eqp_name**: 장비 이름 (선택, EQP_ID와 EQP_NAME 둘 다에서 LIKE 패턴 검색)
     """
-    logger.info(f"[ID 조회] 요청 파라미터: process_id={request.process_id}, process_name={request.process_name}, model_id={request.model_id}, model_name={request.model_name}, eqp_id={request.eqp_id}, eqp_name={request.eqp_name}")
+    logger.info(f"[ID 조회] 요청 파라미터: process_name={request.process_name}, model_name={request.model_name}, eqp_name={request.eqp_name}")
     
     result = {
         "process_id": None,
@@ -580,104 +574,77 @@ async def lookup_ids(request: IdLookupRequest):
             cursor = conn.cursor()
             
             # 1. process_id 조회
-            process_input = request.process_id if request.process_id else request.process_name
-            if process_input:
+            # process_name 입력 시 → PROCESS_ID와 PROCESS_NAME 둘 다에서 LIKE 검색 → 항상 process_id 반환
+            process_name_input = request.process_name.strip() if request.process_name else None
+            
+            if process_name_input:
                 try:
-                    process_value = process_input.strip() if process_input else None
-                    if not process_value:
-                        logger.warning(f"[ID 조회] process 입력값이 비어있음")
+                    # PROCESS_ID와 PROCESS_NAME 둘 다에서 OR 조건으로 LIKE 검색 (항상 PROCESS_ID 반환)
+                    # Oracle에서 같은 값을 두 번 사용하려면 파라미터를 두 번 전달해야 함
+                    query = "SELECT PROCESS_ID FROM PROCESS WHERE UPPER(TRIM(PROCESS_ID)) LIKE UPPER('%' || TRIM(:1) || '%') OR UPPER(TRIM(PROCESS_NAME)) LIKE UPPER('%' || TRIM(:2) || '%')"
+                    query_params = [process_name_input, process_name_input]
+                    logger.info(f"[ID 조회] process_name으로 PROCESS_ID와 PROCESS_NAME 둘 다에서 LIKE 검색: '{process_name_input}'")
+                    
+                    cursor.execute(query, query_params)
+                    rows = cursor.fetchall()
+                    
+                    if rows:
+                        if len(rows) > 1:
+                            logger.warning(f"[ID 조회] process로 여러 개 찾음 ({len(rows)}개), 첫 번째 사용")
+                        result["process_id"] = rows[0][0]
+                        logger.info(f"[ID 조회] process_id 반환: {rows[0][0]}")
                     else:
-                        if request.process_id:
-                            logger.info(f"[ID 조회] process_id로 LIKE 검색 시작: '{process_value}'")
-                            # process_id로 LIKE 검색
-                            cursor.execute(
-                                "SELECT PROCESS_ID FROM PROCESS WHERE UPPER(TRIM(PROCESS_ID)) LIKE UPPER('%' || TRIM(:1) || '%')",
-                                [process_value]
-                            )
-                        else:
-                            logger.info(f"[ID 조회] process_name으로 LIKE 검색 시작: '{process_value}'")
-                            # process_name으로 LIKE 검색
-                            cursor.execute(
-                                "SELECT PROCESS_ID FROM PROCESS WHERE UPPER(TRIM(PROCESS_NAME)) LIKE UPPER('%' || TRIM(:1) || '%')",
-                                [process_value]
-                            )
-                        rows = cursor.fetchall()
-                        
-                        if rows:
-                            if len(rows) > 1:
-                                logger.warning(f"[ID 조회] process로 여러 개 찾음 ({len(rows)}개), 첫 번째 사용: '{process_value}'")
-                            result["process_id"] = rows[0][0]
-                            logger.info(f"[ID 조회] process_id를 LIKE 패턴으로 찾음: '{process_value}' -> {rows[0][0]}")
-                        else:
-                            logger.warning(f"[ID 조회] process를 찾을 수 없음: '{process_value}'")
+                        logger.warning(f"[ID 조회] process를 찾을 수 없음: '{process_name_input}'")
                 except Exception as e:
                     logger.error(f"[ID 조회] process 조회 중 오류: {e}", exc_info=True)
             
             # 2. model_id 조회
-            model_input = request.model_id if request.model_id else request.model_name
-            if model_input:
+            # model_name 입력 시 → MODEL_ID와 MODEL_NAME 둘 다에서 LIKE 검색 → 항상 model_id 반환
+            model_name_input = request.model_name.strip() if request.model_name else None
+            
+            if model_name_input:
                 try:
-                    model_value = model_input.strip() if model_input else None
-                    if not model_value:
-                        logger.warning(f"[ID 조회] model 입력값이 비어있음")
+                    # MODEL_ID와 MODEL_NAME 둘 다에서 OR 조건으로 LIKE 검색 (항상 MODEL_ID 반환)
+                    # Oracle에서 같은 값을 두 번 사용하려면 파라미터를 두 번 전달해야 함
+                    query = "SELECT MODEL_ID FROM MODEL WHERE UPPER(TRIM(MODEL_ID)) LIKE UPPER('%' || TRIM(:1) || '%') OR UPPER(TRIM(MODEL_NAME)) LIKE UPPER('%' || TRIM(:2) || '%')"
+                    query_params = [model_name_input, model_name_input]
+                    logger.info(f"[ID 조회] model_name으로 MODEL_ID와 MODEL_NAME 둘 다에서 LIKE 검색: '{model_name_input}'")
+                    
+                    cursor.execute(query, query_params)
+                    rows = cursor.fetchall()
+                    
+                    if rows:
+                        if len(rows) > 1:
+                            logger.warning(f"[ID 조회] model로 여러 개 찾음 ({len(rows)}개), 첫 번째 사용")
+                        result["model_id"] = rows[0][0]
+                        logger.info(f"[ID 조회] model_id 반환: {rows[0][0]}")
                     else:
-                        if request.model_id:
-                            logger.info(f"[ID 조회] model_id로 LIKE 검색 시작: '{model_value}'")
-                            # model_id로 LIKE 검색
-                            cursor.execute(
-                                "SELECT MODEL_ID FROM MODEL WHERE UPPER(TRIM(MODEL_ID)) LIKE UPPER('%' || TRIM(:1) || '%')",
-                                [model_value]
-                            )
-                        else:
-                            logger.info(f"[ID 조회] model_name으로 LIKE 검색 시작: '{model_value}'")
-                            # model_name으로 LIKE 검색
-                            cursor.execute(
-                                "SELECT MODEL_ID FROM MODEL WHERE UPPER(TRIM(MODEL_NAME)) LIKE UPPER('%' || TRIM(:1) || '%')",
-                                [model_value]
-                            )
-                        rows = cursor.fetchall()
-                        
-                        if rows:
-                            if len(rows) > 1:
-                                logger.warning(f"[ID 조회] model로 여러 개 찾음 ({len(rows)}개), 첫 번째 사용: '{model_value}'")
-                            result["model_id"] = rows[0][0]
-                            logger.info(f"[ID 조회] model_id를 LIKE 패턴으로 찾음: '{model_value}' -> {rows[0][0]}")
-                        else:
-                            logger.warning(f"[ID 조회] model을 찾을 수 없음: '{model_value}'")
+                        logger.warning(f"[ID 조회] model을 찾을 수 없음: '{model_name_input}'")
                 except Exception as e:
                     logger.error(f"[ID 조회] model 조회 중 오류: {e}", exc_info=True)
             
             # 3. eqp_id 조회
-            eqp_input = request.eqp_id if request.eqp_id else request.eqp_name
-            if eqp_input:
+            # eqp_name 입력 시 → EQP_ID와 EQP_NAME 둘 다에서 LIKE 검색 → 항상 eqp_id 반환
+            eqp_name_input = request.eqp_name.strip() if request.eqp_name else None
+            
+            if eqp_name_input:
                 try:
-                    eqp_value = eqp_input.strip() if eqp_input else None
-                    if not eqp_value:
-                        logger.warning(f"[ID 조회] eqp 입력값이 비어있음")
+                    # EQP_ID와 EQP_NAME 둘 다에서 OR 조건으로 LIKE 검색 (항상 EQP_ID 반환)
+                    # Oracle에서 같은 값을 두 번 사용하려면 파라미터를 두 번 전달해야 함
+                    query = "SELECT EQP_ID FROM EQUIPMENT WHERE UPPER(TRIM(EQP_ID)) LIKE UPPER('%' || TRIM(:1) || '%') OR UPPER(TRIM(EQP_NAME)) LIKE UPPER('%' || TRIM(:2) || '%')"
+                    query_params = [eqp_name_input, eqp_name_input]
+                    logger.info(f"[ID 조회] eqp_name으로 EQP_ID와 EQP_NAME 둘 다에서 LIKE 검색: '{eqp_name_input}'")
+                    
+                    cursor.execute(query, query_params)
+                    rows = cursor.fetchall()
+                    
+                    if rows:
+                        if len(rows) > 1:
+                            logger.warning(f"[ID 조회] eqp로 여러 개 찾음 ({len(rows)}개), 첫 번째 사용")
+                        result["eqp_id"] = rows[0][0]
+                        logger.info(f"[ID 조회] eqp_id 반환: {rows[0][0]}")
                     else:
-                        if request.eqp_id:
-                            logger.info(f"[ID 조회] eqp_id로 LIKE 검색 시작: '{eqp_value}'")
-                            # eqp_id로 LIKE 검색
-                            cursor.execute(
-                                "SELECT EQP_ID FROM EQUIPMENT WHERE UPPER(TRIM(EQP_ID)) LIKE UPPER('%' || TRIM(:1) || '%')",
-                                [eqp_value]
-                            )
-                        else:
-                            logger.info(f"[ID 조회] eqp_name으로 LIKE 검색 시작: '{eqp_value}'")
-                            # eqp_name으로 LIKE 검색
-                            cursor.execute(
-                                "SELECT EQP_ID FROM EQUIPMENT WHERE UPPER(TRIM(EQP_NAME)) LIKE UPPER('%' || TRIM(:1) || '%')",
-                                [eqp_value]
-                            )
-                        rows = cursor.fetchall()
-                        
-                        if rows:
-                            if len(rows) > 1:
-                                logger.warning(f"[ID 조회] eqp로 여러 개 찾음 ({len(rows)}개), 첫 번째 사용: '{eqp_value}'")
-                            result["eqp_id"] = rows[0][0]
-                            logger.info(f"[ID 조회] eqp_id를 LIKE 패턴으로 찾음: '{eqp_value}' -> {rows[0][0]}")
-                        else:
-                            logger.warning(f"[ID 조회] eqp를 찾을 수 없음: '{eqp_value}'")
+                        logger.warning(f"[ID 조회] eqp를 찾을 수 없음: '{eqp_name_input}'")
                 except Exception as e:
                     logger.error(f"[ID 조회] eqp 조회 중 오류: {e}", exc_info=True)
             
