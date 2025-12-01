@@ -307,39 +307,47 @@ async def get_error_code_stats(request: ErrorCodeStatsRequest):
     
     try:
         # Period 처리
-        period_select = "NULL AS period"
-        period_group = ""
         if request.group_by == 'month':
             period_select = "TO_CHAR(n.down_start_time, 'YYYY-MM') AS period"
-            period_group = "TO_CHAR(n.down_start_time, 'YYYY-MM'),"
+            period_group = "TO_CHAR(n.down_start_time, 'YYYY-MM')"
+            period_order = "period ASC"
         elif request.group_by == 'day':
             period_select = "TO_CHAR(n.down_start_time, 'YYYY-MM-DD') AS period"
-            period_group = "TO_CHAR(n.down_start_time, 'YYYY-MM-DD'),"
+            period_group = "TO_CHAR(n.down_start_time, 'YYYY-MM-DD')"
+            period_order = "period ASC"
+        else:
+            period_select = "NULL AS period"
+            period_group = ""
+            period_order = "n.process_id ASC"
         
-        # 항상 포함되는 컬럼
-        select_cols = [
-            period_select,
-            "n.process_id",
-            "p.process_name",
-            "n.model_id",
-            "m.model_name",
-            "n.eqp_id",
-            "e.eqp_name",
-            "n.error_code",
-            "ec.error_desc AS error_des"
-        ]
-        
+        # GROUP BY 절 구성
         group_cols = [
-            period_group,
             "n.process_id, p.process_name",
             "n.model_id, m.model_name",
             "n.eqp_id, e.eqp_name",
             "n.error_code, ec.error_desc"
         ]
+        if period_group:
+            group_cols.insert(0, period_group)
+        
+        # ORDER BY 절 구성
+        order_cols = [
+            period_order if period_group else "n.process_id ASC",
+            "n.process_id ASC",
+            "n.error_code ASC"
+        ]
         
         sql = f"""
             SELECT
-                {', '.join(select_cols)},
+                {period_select},
+                n.process_id,
+                p.process_name,
+                n.model_id,
+                m.model_name,
+                n.eqp_id,
+                e.eqp_name,
+                n.error_code,
+                ec.error_desc AS error_des,
                 COUNT(*) AS event_cnt,
                 SUM(n.down_time_minutes) AS total_down_time_minutes
             FROM INFORM_NOTE n
@@ -354,8 +362,8 @@ async def get_error_code_stats(request: ErrorCodeStatsRequest):
               AND (:eqp_id IS NULL OR n.eqp_id = :eqp_id)
               AND (:error_code IS NULL OR n.error_code = :error_code)
               AND n.down_type_id = 1
-            GROUP BY {', '.join(filter(None, group_cols))}
-            ORDER BY {period_select.replace(' AS period', '') if period_select != 'NULL AS period' else 'n.process_id'}
+            GROUP BY {', '.join(group_cols)}
+            ORDER BY {', '.join(order_cols)}
         """
         
         with db.get_connection() as conn:
