@@ -4,7 +4,7 @@ FastAPI를 사용한 REST API 엔드포인트
 """
 from fastapi import FastAPI, HTTPException, Depends, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import date
 import logging
@@ -57,9 +57,17 @@ class AnswerResponse(BaseModel):
 
 class IdLookupRequest(BaseModel):
     """ID 조회 요청 모델"""
+    # 표준 필드명 (기존 호환성 유지)
     process_name: Optional[str] = None  # process_name (PROCESS_ID와 PROCESS_NAME 둘 다에서 LIKE 검색)
     model_name: Optional[str] = None    # model_name (MODEL_ID와 MODEL_NAME 둘 다에서 LIKE 검색)
     eqp_name: Optional[str] = None      # eqp_name (EQP_ID와 EQP_NAME 둘 다에서 LIKE 검색)
+    # Dify 워크플로우 호환 필드명 (keyword 필드)
+    proc_keyword: Optional[str] = None  # proc_keyword (Dify에서 사용, process_name과 동일하게 처리)
+    model_keyword: Optional[str] = None  # model_keyword (Dify에서 사용, model_name과 동일하게 처리)
+    eqp_keyword: Optional[str] = None    # eqp_keyword (Dify에서 사용, eqp_name과 동일하게 처리)
+    # Dify structured_output에서 text 필드가 JSON 문자열인 경우 대비
+    text: Optional[str] = None  # Dify structured_output의 text 필드 (JSON 문자열일 수 있음)
+    structured_output: Optional[dict] = None  # Dify structured_output 객체
 
 
 class IdLookupResponse(BaseModel):
@@ -125,7 +133,7 @@ class PMHistoryRequest(BaseModel):
     end_date: Optional[date] = None
     process_id: Optional[str] = None
     eqp_id: Optional[str] = None
-    limit: Optional[int] = 10  # 최근 N건 조회 (기본값 10)
+    limit: Optional[int] = Field(default=10, ge=1, le=1000, description="최근 N건 조회 (1~1000)")
 
 
 class SearchItem(BaseModel):
@@ -154,7 +162,7 @@ class SearchRequest(BaseModel):
     eqp_id: Optional[str] = None
     operator: Optional[str] = None
     status_id: Optional[int] = None  # 0: IN_PROGRESS, 1: COMPLETED
-    limit: Optional[int] = 20
+    limit: Optional[int] = Field(default=20, ge=1, le=1000, description="조회 건수 제한 (1~1000)")
 
 
 # 데이터베이스 연결 초기화
@@ -544,19 +552,99 @@ async def search_inform_notes(request: SearchRequest):
 
 
 @app.post("/lookup/ids", response_model=IdLookupResponse, tags=["조회"])
-async def lookup_ids(request: IdLookupRequest):
+async def lookup_ids(request: IdLookupRequest, http_request: Request = None):
     """
     ID 조회 API
     
-    process_name, model_name, eqp_name 중 하나 이상을 입력받아 해당하는 ID 값을 반환합니다.
-    각 _name 필드는 해당 ID 컬럼과 NAME 컬럼 둘 다에서 LIKE 패턴 검색을 수행합니다.
+    process_name, model_name, eqp_name 또는 proc_keyword, model_keyword, eqp_keyword 중 하나 이상을 입력받아 해당하는 ID 값을 반환합니다.
+    각 필드는 해당 ID 컬럼과 NAME 컬럼 둘 다에서 LIKE 패턴 검색을 수행합니다.
     찾을 수 없는 경우 null을 반환합니다.
     
-    - **process_name**: 프로세스 이름 (선택, PROCESS_ID와 PROCESS_NAME 둘 다에서 LIKE 패턴 검색)
-    - **model_name**: 모델 이름 (선택, MODEL_ID와 MODEL_NAME 둘 다에서 LIKE 패턴 검색)
-    - **eqp_name**: 장비 이름 (선택, EQP_ID와 EQP_NAME 둘 다에서 LIKE 패턴 검색)
+    - **process_name** 또는 **proc_keyword**: 프로세스 이름 (PROCESS_ID와 PROCESS_NAME 둘 다에서 LIKE 패턴 검색)
+    - **model_name** 또는 **model_keyword**: 모델 이름 (MODEL_ID와 MODEL_NAME 둘 다에서 LIKE 패턴 검색)
+    - **eqp_name** 또는 **eqp_keyword**: 장비 이름 (EQP_ID와 EQP_NAME 둘 다에서 LIKE 패턴 검색)
+    
+    Dify 워크플로우 호환: proc_keyword, model_keyword, eqp_keyword 필드 지원
     """
-    logger.info(f"[ID 조회] 요청 파라미터: process_name={request.process_name}, model_name={request.model_name}, eqp_name={request.eqp_name}")
+    # 원본 요청 본문 로깅 (디버깅용)
+    raw_body_data = None
+    if http_request:
+        try:
+            body = await http_request.body()
+            if body:
+                body_str = body.decode('utf-8')
+                logger.info(f"[ID 조회] 원본 요청 Body: {body_str[:500]}")
+                # JSON 문자열인 경우 파싱 시도
+                try:
+                    raw_body_data = json.loads(body_str)
+                except:
+                    pass
+        except Exception as e:
+            logger.warning(f"[ID 조회] 요청 Body 읽기 실패: {e}")
+    
+    # Dify structured_output에서 데이터 추출 (text 필드가 JSON 문자열인 경우)
+    extracted_data = {}
+    if request.text:
+        try:
+            # text 필드가 JSON 문자열인 경우 파싱
+            parsed_text = json.loads(request.text)
+            if isinstance(parsed_text, dict):
+                extracted_data.update(parsed_text)
+                logger.info(f"[ID 조회] text 필드에서 JSON 파싱 성공: {parsed_text}")
+        except:
+            pass
+    
+    # structured_output 객체에서 직접 추출
+    if request.structured_output:
+        extracted_data.update(request.structured_output)
+        logger.info(f"[ID 조회] structured_output에서 데이터 추출: {request.structured_output}")
+    
+    # raw_body_data에서도 추출
+    if raw_body_data:
+        if isinstance(raw_body_data, dict):
+            if "text" in raw_body_data:
+                try:
+                    parsed_text = json.loads(raw_body_data["text"])
+                    if isinstance(parsed_text, dict):
+                        extracted_data.update(parsed_text)
+                except:
+                    pass
+            if "structured_output" in raw_body_data:
+                if isinstance(raw_body_data["structured_output"], dict):
+                    extracted_data.update(raw_body_data["structured_output"])
+    
+    # Dify 호환성: keyword 필드를 name 필드로 매핑 (keyword가 우선)
+    # 우선순위: extracted_data > keyword 필드 > name 필드
+    
+    # process_name_input 추출
+    process_name_input = None
+    if extracted_data.get("proc_keyword"):
+        process_name_input = str(extracted_data["proc_keyword"]).strip()
+    elif request.proc_keyword and request.proc_keyword.strip():
+        process_name_input = request.proc_keyword.strip()
+    elif request.process_name and request.process_name.strip():
+        process_name_input = request.process_name.strip()
+    
+    # model_name_input 추출
+    model_name_input = None
+    if extracted_data.get("model_keyword"):
+        model_name_input = str(extracted_data["model_keyword"]).strip()
+    elif request.model_keyword and request.model_keyword.strip():
+        model_name_input = request.model_keyword.strip()
+    elif request.model_name and request.model_name.strip():
+        model_name_input = request.model_name.strip()
+    
+    # eqp_name_input 추출
+    eqp_name_input = None
+    if extracted_data.get("eqp_keyword"):
+        eqp_name_input = str(extracted_data["eqp_keyword"]).strip()
+    elif request.eqp_keyword and request.eqp_keyword.strip():
+        eqp_name_input = request.eqp_keyword.strip()
+    elif request.eqp_name and request.eqp_name.strip():
+        eqp_name_input = request.eqp_name.strip()
+    
+    logger.info(f"[ID 조회] 요청 파라미터: process_name={process_name_input}, model_name={model_name_input}, eqp_name={eqp_name_input}")
+    logger.info(f"[ID 조회] 원본 필드: process_name={request.process_name}, proc_keyword={request.proc_keyword}, model_name={request.model_name}, model_keyword={request.model_keyword}, eqp_name={request.eqp_name}, eqp_keyword={request.eqp_keyword}")
     
     result = {
         "process_id": None,
@@ -575,7 +663,6 @@ async def lookup_ids(request: IdLookupRequest):
             
             # 1. process_id 조회
             # process_name 입력 시 → PROCESS_ID와 PROCESS_NAME 둘 다에서 LIKE 검색 → 항상 process_id 반환
-            process_name_input = request.process_name.strip() if request.process_name else None
             
             if process_name_input:
                 try:
@@ -600,7 +687,7 @@ async def lookup_ids(request: IdLookupRequest):
             
             # 2. model_id 조회
             # model_name 입력 시 → MODEL_ID와 MODEL_NAME 둘 다에서 LIKE 검색 → 항상 model_id 반환
-            model_name_input = request.model_name.strip() if request.model_name else None
+            # (model_name_input은 이미 위에서 매핑됨)
             
             if model_name_input:
                 try:
@@ -625,7 +712,7 @@ async def lookup_ids(request: IdLookupRequest):
             
             # 3. eqp_id 조회
             # eqp_name 입력 시 → EQP_ID와 EQP_NAME 둘 다에서 LIKE 검색 → 항상 eqp_id 반환
-            eqp_name_input = request.eqp_name.strip() if request.eqp_name else None
+            # (eqp_name_input은 이미 위에서 매핑됨)
             
             if eqp_name_input:
                 try:

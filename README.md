@@ -57,7 +57,7 @@ pip install -r requirements.txt
 
 **Oracle 연결 필수 값**
 ```env
-ORACLE_USER=system
+ORACLE_USER=oracleuser
 ORACLE_PASSWORD=oracle
 ORACLE_DSN=localhost:1521/FREEPDB1
 ```
@@ -332,13 +332,13 @@ docker compose restart question-answer-api
 
 Docker Compose 사용 시 기본 설정:
 - Oracle DB: `oracle-db:1521/FREEPDB1`
-- 사용자: `system`
+- 사용자: `oracleuser`
 - 비밀번호: `oracle`
 
 `.env` 파일을 생성하여 다른 설정을 사용할 수 있습니다:
 
 ```env
-ORACLE_USER=system
+ORACLE_USER=oracleuser
 ORACLE_PASSWORD=oracle
 ORACLE_DSN=oracle-db:1521/FREEPDB1
 SKIP_DB_BOOTSTRAP=0  # 0: 실행, 1: 생략
@@ -413,7 +413,7 @@ docker stop oracle
 docker start oracle
 
 # SQL*Plus로 직접 연결 테스트
-docker exec -it oracle sqlplus system/your_password@FREEPDB1
+docker exec -it oracle sqlplus oracleuser/oracle@FREEPDB1
 ```
 
 ### 문제 해결
@@ -443,7 +443,7 @@ docker exec oracle lsnrctl status
 **해결**:
 ```bash
 # Service Name 확인
-docker exec oracle sqlplus -s system/your_password <<EOF
+docker exec oracle sqlplus -s oracleuser/oracle <<EOF
 SELECT name FROM v\$pdbs;
 EXIT;
 EOF
@@ -581,7 +581,7 @@ az container create \
   --dns-name-label question-answer-api \
   --ports 8000 \
   --environment-variables \
-    ORACLE_USER=system \
+    ORACLE_USER=oracleuser \
     ORACLE_PASSWORD=oracle \
     ORACLE_DSN=your-oracle-host:1521/FREEPDB1 \
     DIFY_API_BASE=https://ai-platform-deploy.koreacentral.cloudapp.azure.com:3000/v1 \
@@ -603,7 +603,7 @@ az webapp config appsettings set \
   --resource-group question-answer-api-rg \
   --name question-answer-api-app \
   --settings \
-    ORACLE_USER=system \
+    ORACLE_USER=oracleuser \
     ORACLE_PASSWORD=oracle \
     ORACLE_DSN=your-oracle-host:1521/FREEPDB1 \
     DIFY_API_BASE=https://ai-platform-deploy.koreacentral.cloudapp.azure.com:3000/v1 \

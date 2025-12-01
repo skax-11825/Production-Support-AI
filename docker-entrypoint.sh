@@ -17,7 +17,7 @@ import sys
 
 try:
     conn = oracledb.connect(
-        user=os.getenv('ORACLE_USER', 'system'),
+        user=os.getenv('ORACLE_USER', 'oracleuser'),
         password=os.getenv('ORACLE_PASSWORD', 'oracle'),
         dsn=os.getenv('ORACLE_DSN', 'oracle-db:1521/FREEPDB1')
     )

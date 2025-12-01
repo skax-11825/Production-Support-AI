@@ -15,7 +15,7 @@ services:
     volumes:
       - oracle-data:/opt/oracle/oradata
     healthcheck:
-      test: ["CMD-SHELL", "sqlplus -s system/oracle@localhost:1521/FREEPDB1 <<< 'SELECT 1 FROM DUAL;' | grep -q '1'"]
+      test: ["CMD-SHELL", "sqlplus -s oracleuser/oracle@localhost:1521/FREEPDB1 <<< 'SELECT 1 FROM DUAL;' | grep -q '1'"]
       interval: 10s
       timeout: 5s
       retries: 10
