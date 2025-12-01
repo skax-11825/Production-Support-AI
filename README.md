@@ -22,7 +22,6 @@ Dify 워크플로우 → HTTP Request 노드 → 백엔드 서버 (/ask)
 - Dify 제공 키워드 기반 Oracle DB 조회
 - 헬스 체크 엔드포인트
 - CORS 지원
-- 별도 CLI로 질문 분석/쿼리 테스트 (question_analyzer 활용)
 
 ## 사전 요구사항
 
@@ -319,30 +318,7 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
    - 테이블: `Inform_note`
    - 역할: 반도체 공정 다운타임 데이터 저장 및 조회
 
-6. **Keyword Pipeline Tester (CLI)**
-   - 위치: `scripts/keyword_pipeline_tester.py`
-   - 역할: 백엔드 개발자가 질문-키워드-쿼리 파이프라인을 독립적으로 검증할 때 사용
-
-## 키워드 파이프라인 테스트 CLI
-
-Dify 없이도 질문 → 키워드 추출 → 쿼리 실행을 반복적으로 검증할 수 있는 스크립트를 제공합니다.
-
-```bash
-# 인터랙티브 모드 (무한 반복, exit 입력 시 종료)
-python scripts/keyword_pipeline_tester.py
-
-# 단일 질문만 테스트
-python scripts/keyword_pipeline_tester.py --question "ICH FAC_M16 PROC_PH 다운 2시간"
-
-# 실제 Oracle DB까지 실행 (환경변수 필요)
-python scripts/keyword_pipeline_tester.py --execute-query --limit 5
-```
-
-- `question_analyzer`가 내부에서 정규식 기반으로 필터를 추출합니다.
-- `--execute-query` 옵션을 사용하면 Oracle DB 연결을 확인 후 실제 결과를 확인할 수 있습니다.
-- CLI는 오직 개발/테스트 용도로만 사용하며, 운영 `/ask` 엔드포인트는 Dify가 제공한 `filters`만 신뢰합니다.
-
-### 처리 흐름
+## 처리 흐름
 
 #### 케이스 1: 공정정보 특정 가능
 
@@ -384,14 +360,21 @@ python scripts/keyword_pipeline_tester.py --execute-query --limit 5
 모든 테이블을 한 번에 생성:
 
 ```bash
-./venv/bin/python3 setup_tables.py
+# 전체 DB 재구성 및 데이터 적재
+./venv/bin/python3 recreate_database.py --yes
 ```
 
 스크립트 실행 시:
-- 데이터베이스 연결 확인
+- 기존 테이블 삭제 (외래키 제약조건 고려)
 - 레퍼런스 테이블 생성 (SITE, FACTORY, LINE 등)
 - 반도체 용어 사전 테이블 생성 (FAB_TERMS_DICTIONARY)
 - Inform Note 테이블 생성 (INFORM_NOTE)
+- 참조 테이블 데이터 적재 (SITE, FACTORY, LINE)
+- 레퍼런스 테이블 데이터 적재
+- 용어 사전 데이터 적재
+- Inform Note 데이터 적재
+
+자세한 내용은 `EXCEL_TO_DB_GUIDE.md` 파일을 참조하세요.
 - SQL 파일 자동 실행
 
 **옵션**:
@@ -607,9 +590,8 @@ EOF
 
 실행 순서:
 1. Oracle DB 연결 대기 (최대 30회 시도)
-2. `setup_tables.py` - 모든 테이블 생성 (레퍼런스, 용어 사전, Inform Note)
-3. `load_data.py` - 모든 데이터 적재 (레퍼런스, 용어 사전, Inform Note)
-4. FastAPI 서버 시작
+2. `recreate_database.py` - 전체 DB 재구성 및 데이터 적재 (테이블 생성 + 데이터 적재)
+3. FastAPI 서버 시작
 
 ## Dify 연동 설정
 
@@ -793,23 +775,31 @@ build_windows.bat
 ```
 .
 ├── main.py                  # FastAPI 애플리케이션 메인 파일
-├── question_analyzer.py     # 질문 분석 및 공정정보 추출 모듈
-├── process_query_builder.py # Oracle DB 쿼리 생성 및 실행 모듈
 ├── database.py              # Oracle DB 연결 관리
 ├── config.py                # 설정 관리
 ├── dify_client.py           # Dify OpenAPI 연동 모듈
 ├── test_connection.py       # DB 연결 테스트 스크립트
-├── setup_tables.py          # 통합 테이블 생성 스크립트
-├── load_data.py             # 통합 데이터 적재 스크립트
+├── recreate_database.py     # 전체 DB 재구성 및 데이터 적재 통합 스크립트
+├── load_data.py             # 엑셀 데이터 적재 스크립트
 ├── utils.py                 # 공통 유틸리티 함수
-├── create_informnote_table.sql # 테이블 생성 SQL
+├── create_reference_tables.sql    # 레퍼런스 테이블 생성 SQL
+├── create_semicon_term_dict.sql   # 용어 사전 테이블 생성 SQL
+├── create_informnote_table.sql    # Inform Note 테이블 생성 SQL
+├── normalized_data_preprocessed.xlsx  # 원본 엑셀 데이터 파일
 ├── requirements.txt         # Python 패키지 의존성
 ├── build.spec               # PyInstaller 빌드 설정
 ├── build_windows.bat        # Windows 빌드 스크립트
 ├── build_macos.sh           # macOS/Linux 빌드 스크립트
 ├── setup_env.sh             # Python 3.12 전용 환경 설정 스크립트
+├── start_server.py          # 서버 시작 스크립트 (크로스 플랫폼)
+├── start_server.bat         # 서버 시작 스크립트 (Windows)
+├── start_server.sh          # 서버 시작 스크립트 (macOS/Linux)
+├── start_all.py             # 서버 + ngrok 통합 시작 스크립트 (크로스 플랫폼)
+├── start_all.bat            # 서버 + ngrok 통합 시작 스크립트 (Windows)
+├── start_all.sh             # 서버 + ngrok 통합 시작 스크립트 (macOS/Linux)
 ├── Dockerfile               # Docker 이미지 빌드 설정
 ├── docker-compose.yml       # Docker Compose 설정
+├── EXCEL_TO_DB_GUIDE.md     # 엑셀 → DB 데이터 적재 가이드
 └── README.md                # 프로젝트 문서
 ```
 

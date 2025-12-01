@@ -176,61 +176,73 @@ def extract_keyword_from_dify(request: IdLookupRequest) -> Dict[str, Optional[st
     
     # structured_output에서 추출
     if request.structured_output:
-        extracted.update(request.structured_output)
+        if isinstance(request.structured_output, dict):
+            extracted.update(request.structured_output)
+        else:
+            logger.warning(f"[키워드 추출] structured_output이 dict가 아님: {type(request.structured_output)}")
     
     # text 필드가 JSON 문자열인 경우 파싱
     if request.text:
         try:
-            # JSON 문자열에서 이스케이프 문자 처리
             text_content = request.text.strip()
-            parsed = json.loads(text_content)
-            if isinstance(parsed, dict):
-                extracted.update(parsed)
+            # null 문자열 제거
+            if text_content.lower() == 'null' or not text_content:
+                logger.debug("[키워드 추출] text 필드가 null이거나 비어있음")
+            else:
+                parsed = json.loads(text_content)
+                if isinstance(parsed, dict):
+                    extracted.update(parsed)
+                else:
+                    logger.warning(f"[키워드 추출] text 필드 파싱 결과가 dict가 아님: {type(parsed)}")
         except json.JSONDecodeError as e:
-            logger.warning(f"[키워드 추출] text 필드 JSON 파싱 실패: {e}")
+            logger.warning(f"[키워드 추출] text 필드 JSON 파싱 실패: {e}, 원본: {request.text[:100]}")
         except Exception as e:
             logger.warning(f"[키워드 추출] text 필드 처리 중 오류: {e}")
     
     # 최종 매핑: keyword > name > extracted
     result = {}
     
+    def clean_value(value):
+        """값 정리: None, 빈 문자열, 'null' 문자열, 변수 참조 패턴 처리"""
+        if value is None:
+            return None
+        str_val = str(value).strip()
+        if not str_val or str_val.lower() == 'null':
+            return None
+        # 변수 참조 패턴 제거 (예: '1764575467466.structured_output.process_keyword')
+        if '.' in str_val and any(kw in str_val.lower() for kw in ['keyword', 'output', 'variable', 'structured']):
+            logger.warning(f"[키워드 추출] 변수 참조 패턴 감지, 무시: {str_val}")
+            return None
+        return str_val
+    
     # process_name 매핑
     process_value = (
-        extracted.get('proc_keyword') or
-        getattr(request, 'proc_keyword', None) or
-        extracted.get('process_name') or
-        getattr(request, 'process_name', None)
+        clean_value(extracted.get('proc_keyword')) or
+        clean_value(getattr(request, 'proc_keyword', None)) or
+        clean_value(extracted.get('process_name')) or
+        clean_value(getattr(request, 'process_name', None))
     )
-    # None이나 빈 문자열이 아닌 경우에만 처리
-    if process_value and str(process_value).strip() and str(process_value).lower() != 'null':
-        result['process_name'] = str(process_value).strip()
-    else:
-        result['process_name'] = None
+    result['process_name'] = process_value
     
     # model_name 매핑
     model_value = (
-        extracted.get('model_keyword') or
-        getattr(request, 'model_keyword', None) or
-        extracted.get('model_name') or
-        getattr(request, 'model_name', None)
+        clean_value(extracted.get('model_keyword')) or
+        clean_value(getattr(request, 'model_keyword', None)) or
+        clean_value(extracted.get('model_name')) or
+        clean_value(getattr(request, 'model_name', None))
     )
-    if model_value and str(model_value).strip() and str(model_value).lower() != 'null':
-        result['model_name'] = str(model_value).strip()
-    else:
-        result['model_name'] = None
+    result['model_name'] = model_value
     
     # eqp_name 매핑
     eqp_value = (
-        extracted.get('eqp_keyword') or
-        getattr(request, 'eqp_keyword', None) or
-        extracted.get('eqp_name') or
-        getattr(request, 'eqp_name', None)
+        clean_value(extracted.get('eqp_keyword')) or
+        clean_value(getattr(request, 'eqp_keyword', None)) or
+        clean_value(extracted.get('eqp_name')) or
+        clean_value(getattr(request, 'eqp_name', None))
     )
-    if eqp_value and str(eqp_value).strip() and str(eqp_value).lower() != 'null':
-        result['eqp_name'] = str(eqp_value).strip()
-    else:
-        result['eqp_name'] = None
+    result['eqp_name'] = eqp_value
     
+    logger.info(f"[키워드 추출] 최종 결과: {result}")
     return result
 
 
@@ -312,11 +324,16 @@ async def lookup_ids(request: IdLookupRequest):
     process_name, model_name, eqp_name 또는 proc_keyword, model_keyword, eqp_keyword 중
     하나 이상을 입력받아 해당하는 ID 값을 반환합니다.
     """
-    # 디버깅: 요청 본문 로깅
-    logger.info(f"[ID 조회] 요청 수신 - text: {request.text[:100] if request.text else None}, structured_output: {request.structured_output}")
+    # 디버깅: 요청 본문 전체 로깅
+    request_dict = request.model_dump(exclude_none=True)
+    logger.info(f"[ID 조회] 요청 수신 - 전체 요청: {json.dumps(request_dict, ensure_ascii=False)}")
     
     keywords = extract_keyword_from_dify(request)
     logger.info(f"[ID 조회] 추출된 keywords: {keywords}")
+    
+    # 키워드가 모두 None인 경우 경고
+    if not any(keywords.values()):
+        logger.warning(f"[ID 조회] 모든 키워드가 None입니다. 원본 요청: {request_dict}")
     
     result = IdLookupResponse(
         process_id=lookup_id_by_name("PROCESS", "PROCESS_ID", "PROCESS_NAME", keywords.get("process_name")),
