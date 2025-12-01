@@ -177,6 +177,14 @@ def load_term_dictionary(truncate: bool = False):
     
     with db.get_connection() as conn:
         cursor = conn.cursor()
+        
+        # 트리거 비활성화 (데이터 적재 중 오류 방지)
+        try:
+            cursor.execute(f"ALTER TRIGGER TRG_FAB_TERMS_DICTIONARY_UPD DISABLE")
+            logger.debug("트리거 비활성화 완료")
+        except Exception as e:
+            logger.debug(f"트리거 비활성화 실패 (무시): {e}")
+        
         if truncate:
             cursor.execute(f"TRUNCATE TABLE {table_name}")
         
@@ -188,6 +196,30 @@ def load_term_dictionary(truncate: bool = False):
             cursor.execute(merge_sql, record)
             if idx % 50 == 0:
                 logger.info(f"{idx}건 처리")
+        
+        # 트리거 재활성화
+        try:
+            cursor.execute(f"ALTER TRIGGER TRG_FAB_TERMS_DICTIONARY_UPD ENABLE")
+            logger.debug("트리거 재활성화 완료")
+        except Exception as e:
+            logger.warning(f"트리거 재활성화 실패: {e}")
+            # 트리거가 유효하지 않으면 삭제하고 재생성
+            try:
+                cursor.execute(f"DROP TRIGGER TRG_FAB_TERMS_DICTIONARY_UPD")
+                logger.info("유효하지 않은 트리거 삭제 완료")
+                # 트리거 재생성
+                trigger_sql = """
+                CREATE OR REPLACE TRIGGER TRG_FAB_TERMS_DICTIONARY_UPD
+                BEFORE UPDATE ON FAB_TERMS_DICTIONARY
+                FOR EACH ROW
+                BEGIN
+                    :NEW.UPDATED_AT := SYSDATE;
+                END;
+                """
+                cursor.execute(trigger_sql)
+                logger.info("트리거 재생성 완료")
+            except Exception as e2:
+                logger.warning(f"트리거 재생성 실패: {e2}")
         
         cursor.close()
     logger.info(f"{table_name} {len(records)}건 upsert 완료")

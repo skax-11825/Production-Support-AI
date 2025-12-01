@@ -162,15 +162,23 @@ def create_all_tables():
                     if not statement.strip():
                         continue
                     try:
+                        # PL/SQL 블록(TRIGGER 등)은 그대로 실행
+                        # 일반 SQL도 execute()로 실행
                         cursor.execute(statement)
                         success += 1
-                        logger.info(f"  [{idx}/{len(statements)}] 실행 완료")
+                        if idx <= 3 or idx % 10 == 0:  # 처음 3개와 10개마다 로그
+                            logger.info(f"  [{idx}/{len(statements)}] 실행 완료")
                     except Exception as e:
                         error_msg = str(e)
-                        if 'already exists' in error_msg.lower() or 'name is already used' in error_msg.lower():
-                            logger.warning(f"  ⚠ 객체가 이미 존재합니다")
+                        error_upper = error_msg.upper()
+                        # 이미 존재하는 객체는 경고만 출력하고 계속 진행
+                        if any(keyword in error_upper for keyword in ['ALREADY EXISTS', 'NAME IS ALREADY USED', 'ORA-00955', 'ORA-00942']):
+                            logger.warning(f"  ⚠ [{idx}/{len(statements)}] 객체가 이미 존재하거나 없음: {error_msg[:100]}")
+                            success += 1  # 경고지만 성공으로 카운트
                         else:
-                            logger.error(f"  ✗ SQL 실행 실패: {error_msg[:200]}")
+                            logger.error(f"  ✗ [{idx}/{len(statements)}] SQL 실행 실패")
+                            logger.error(f"     SQL 미리보기: {statement[:150]}...")
+                            logger.error(f"     오류: {error_msg[:400]}")
                             raise
                 
                 cursor.close()

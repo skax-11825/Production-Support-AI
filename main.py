@@ -55,6 +55,20 @@ class AnswerResponse(BaseModel):
     success: bool
 
 
+class IdLookupRequest(BaseModel):
+    """ID 조회 요청 모델"""
+    process_id: Optional[str] = None  # process_id 또는 process_name
+    model_id: Optional[str] = None    # model_id 또는 model_name
+    eqp_id: Optional[str] = None      # eqp_id 또는 eqp_name
+
+
+class IdLookupResponse(BaseModel):
+    """ID 조회 응답 모델"""
+    process_id: Optional[str] = None
+    model_id: Optional[str] = None
+    eqp_id: Optional[str] = None
+
+
 class HealthResponse(BaseModel):
     """헬스 체크 응답 모델"""
     status: str
@@ -527,6 +541,135 @@ async def search_inform_notes(request: SearchRequest):
     except Exception as e:
         logger.error(f"[상세 검색] 조회 중 오류 발생: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"상세 조회 중 오류가 발생했습니다: {str(e)}")
+
+
+@app.post("/lookup/ids", response_model=IdLookupResponse, tags=["조회"])
+async def lookup_ids(request: IdLookupRequest):
+    """
+    ID 조회 API
+    
+    process_id, model_id, eqp_id 중 하나 이상을 입력받아 해당하는 ID 값을 반환합니다.
+    입력값이 ID인 경우 그대로 반환하고, 이름인 경우 해당하는 ID를 조회하여 반환합니다.
+    찾을 수 없는 경우 null을 반환합니다.
+    
+    - **process_id**: 프로세스 ID 또는 프로세스 이름
+    - **model_id**: 모델 ID 또는 모델 이름
+    - **eqp_id**: 장비 ID 또는 장비 이름
+    """
+    logger.info(f"[ID 조회] 요청 파라미터: process_id={request.process_id}, model_id={request.model_id}, eqp_id={request.eqp_id}")
+    
+    result = {
+        "process_id": None,
+        "model_id": None,
+        "eqp_id": None
+    }
+    
+    try:
+        # 데이터베이스 연결 확인
+        if not db.test_connection():
+            logger.error("[ID 조회] 데이터베이스 연결 실패")
+            raise HTTPException(status_code=503, detail="데이터베이스에 연결할 수 없습니다.")
+        
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            # 1. process_id 조회
+            if request.process_id:
+                try:
+                    # 먼저 ID로 조회 시도
+                    cursor.execute(
+                        "SELECT PROCESS_ID FROM PROCESS WHERE PROCESS_ID = :1",
+                        [request.process_id]
+                    )
+                    row = cursor.fetchone()
+                    
+                    if row:
+                        # ID로 찾은 경우
+                        result["process_id"] = row[0]
+                        logger.info(f"[ID 조회] process_id를 ID로 찾음: {row[0]}")
+                    else:
+                        # 이름으로 조회 시도
+                        cursor.execute(
+                            "SELECT PROCESS_ID FROM PROCESS WHERE UPPER(PROCESS_NAME) = UPPER(:1)",
+                            [request.process_id]
+                        )
+                        row = cursor.fetchone()
+                        if row:
+                            result["process_id"] = row[0]
+                            logger.info(f"[ID 조회] process_id를 이름으로 찾음: {request.process_id} -> {row[0]}")
+                        else:
+                            logger.warning(f"[ID 조회] process_id를 찾을 수 없음: {request.process_id}")
+                except Exception as e:
+                    logger.error(f"[ID 조회] process_id 조회 중 오류: {e}")
+            
+            # 2. model_id 조회
+            if request.model_id:
+                try:
+                    # 먼저 ID로 조회 시도
+                    cursor.execute(
+                        "SELECT MODEL_ID FROM MODEL WHERE MODEL_ID = :1",
+                        [request.model_id]
+                    )
+                    row = cursor.fetchone()
+                    
+                    if row:
+                        # ID로 찾은 경우
+                        result["model_id"] = row[0]
+                        logger.info(f"[ID 조회] model_id를 ID로 찾음: {row[0]}")
+                    else:
+                        # 이름으로 조회 시도
+                        cursor.execute(
+                            "SELECT MODEL_ID FROM MODEL WHERE UPPER(MODEL_NAME) = UPPER(:1)",
+                            [request.model_id]
+                        )
+                        row = cursor.fetchone()
+                        if row:
+                            result["model_id"] = row[0]
+                            logger.info(f"[ID 조회] model_id를 이름으로 찾음: {request.model_id} -> {row[0]}")
+                        else:
+                            logger.warning(f"[ID 조회] model_id를 찾을 수 없음: {request.model_id}")
+                except Exception as e:
+                    logger.error(f"[ID 조회] model_id 조회 중 오류: {e}")
+            
+            # 3. eqp_id 조회
+            if request.eqp_id:
+                try:
+                    # 먼저 ID로 조회 시도
+                    cursor.execute(
+                        "SELECT EQP_ID FROM EQUIPMENT WHERE EQP_ID = :1",
+                        [request.eqp_id]
+                    )
+                    row = cursor.fetchone()
+                    
+                    if row:
+                        # ID로 찾은 경우
+                        result["eqp_id"] = row[0]
+                        logger.info(f"[ID 조회] eqp_id를 ID로 찾음: {row[0]}")
+                    else:
+                        # 이름으로 조회 시도
+                        cursor.execute(
+                            "SELECT EQP_ID FROM EQUIPMENT WHERE UPPER(EQP_NAME) = UPPER(:1)",
+                            [request.eqp_id]
+                        )
+                        row = cursor.fetchone()
+                        if row:
+                            result["eqp_id"] = row[0]
+                            logger.info(f"[ID 조회] eqp_id를 이름으로 찾음: {request.eqp_id} -> {row[0]}")
+                        else:
+                            logger.warning(f"[ID 조회] eqp_id를 찾을 수 없음: {request.eqp_id}")
+                except Exception as e:
+                    logger.error(f"[ID 조회] eqp_id 조회 중 오류: {e}")
+            
+            cursor.close()
+        
+        logger.info(f"[ID 조회] 결과: {result}")
+        return IdLookupResponse(**result)
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[ID 조회] 오류 발생: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"ID 조회 중 오류가 발생했습니다: {str(e)}")
 
 
 @app.post("/ask", response_model=AnswerResponse, tags=["질문-답변"])
