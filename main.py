@@ -116,6 +116,7 @@ class PMHistoryItem(BaseModel):
     down_date: str
     down_type: str
     down_time_minutes: float
+    operator: Optional[str] = None
 
 
 class PMHistoryResponse(BaseModel):
@@ -129,6 +130,7 @@ class PMHistoryRequest(BaseModel):
     end_date: Optional[date] = None
     process_id: Optional[str] = None
     eqp_id: Optional[str] = None
+    operator: Optional[str] = None
     limit: Optional[int] = Field(default=10, ge=1, le=1000)
 
 
@@ -540,24 +542,27 @@ async def get_pm_history(request: PMHistoryRequest):
     # 요청 값 정리 및 로깅
     cleaned_process_id = clean_request_value(request.process_id, "process_id")
     cleaned_eqp_id = clean_request_value(request.eqp_id, "eqp_id")
+    cleaned_operator = clean_request_value(request.operator, "operator")
     
-    logger.info(f"[PM 이력] 요청 수신 - process_id: {cleaned_process_id}, eqp_id: {cleaned_eqp_id}, start_date: {request.start_date}, end_date: {request.end_date}, limit: {request.limit}")
+    logger.info(f"[PM 이력] 요청 수신 - process_id: {cleaned_process_id}, eqp_id: {cleaned_eqp_id}, operator: {cleaned_operator}, start_date: {request.start_date}, end_date: {request.end_date}, limit: {request.limit}")
     
     # 모든 필터가 None인 경우 경고
-    if not any([cleaned_process_id, cleaned_eqp_id, request.start_date, request.end_date]):
-        logger.warning(f"[PM 이력] 모든 필터가 None입니다. 전체 데이터 조회됩니다. (원본 요청: process_id={request.process_id}, eqp_id={request.eqp_id})")
+    if not any([cleaned_process_id, cleaned_eqp_id, cleaned_operator, request.start_date, request.end_date]):
+        logger.warning(f"[PM 이력] 모든 필터가 None입니다. 전체 데이터 조회됩니다. (원본 요청: process_id={request.process_id}, eqp_id={request.eqp_id}, operator={request.operator})")
     
     sql = """
         SELECT
             TO_CHAR(n.down_start_time, 'YYYY-MM-DD') as down_date,
             dt.down_type_name,
-            n.down_time_minutes
+            n.down_time_minutes,
+            n.operator
         FROM INFORM_NOTE n
         LEFT JOIN DOWN_TYPE dt ON n.down_type_id = dt.down_type_id
         WHERE (:start_date IS NULL OR n.down_start_time >= TO_DATE(:start_date, 'YYYY-MM-DD'))
           AND (:end_date IS NULL OR n.down_start_time < TO_DATE(:end_date, 'YYYY-MM-DD') + 1)
           AND (:process_id IS NULL OR n.process_id = :process_id)
           AND (:eqp_id IS NULL OR n.eqp_id = :eqp_id)
+          AND (:operator IS NULL OR n.operator LIKE '%' || :operator || '%')
           AND n.down_type_id = 0
         ORDER BY n.down_start_time DESC
         FETCH FIRST :limit_val ROWS ONLY
@@ -571,6 +576,7 @@ async def get_pm_history(request: PMHistoryRequest):
                 "end_date": format_date_for_db(request.end_date),
                 "process_id": cleaned_process_id,
                 "eqp_id": cleaned_eqp_id,
+                "operator": cleaned_operator,
                 "limit_val": request.limit or 10
             })
             
@@ -581,7 +587,8 @@ async def get_pm_history(request: PMHistoryRequest):
                 PMHistoryItem(
                     down_date=row[0],
                     down_type=row[1] or "SCHEDULED",
-                    down_time_minutes=float(row[2]) if row[2] is not None else 0.0
+                    down_time_minutes=float(row[2]) if row[2] is not None else 0.0,
+                    operator=row[3]
                 )
                 for row in rows
             ]
