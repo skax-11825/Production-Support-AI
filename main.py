@@ -1,6 +1,7 @@
 """
-질문-답변 API 서버
+데이터 조회 API 서버
 FastAPI를 사용한 REST API 엔드포인트
+Dify에서 받은 입력값으로 DB를 조회하고 결과를 반환합니다.
 """
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,7 +12,6 @@ import logging
 import json
 from database import db
 from config import settings
-from dify_client import is_dify_enabled, request_answer, DifyClientError
 from utils import read_sql_file
 from pathlib import Path
 
@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
-    description="질문을 받고 답변을 제공하는 API 서버"
+    description="데이터 조회 API 서버 - Dify에서 받은 입력값으로 DB를 조회하고 결과를 반환합니다."
 )
 
 # CORS 설정
@@ -42,19 +42,6 @@ app.add_middleware(
 # ============================================================================
 # 요청/응답 모델
 # ============================================================================
-
-class QuestionRequest(BaseModel):
-    """질문 요청 모델"""
-    question: Optional[str] = ""
-    context: Optional[str] = None
-
-
-class AnswerResponse(BaseModel):
-    """답변 응답 모델"""
-    answer: str
-    question: str
-    success: bool
-
 
 class ProcessInfo(BaseModel):
     """Process 정보 모델"""
@@ -101,7 +88,6 @@ class HealthResponse(BaseModel):
     """헬스 체크 응답 모델"""
     status: str
     database_connected: bool
-    dify_enabled: bool
 
 
 class ErrorCodeStatsItem(BaseModel):
@@ -262,7 +248,7 @@ async def shutdown_event():
 async def root():
     """루트 엔드포인트"""
     return {
-        "message": "질문-답변 API 서버에 오신 것을 환영합니다.",
+        "message": "데이터 조회 API 서버에 오신 것을 환영합니다.",
         "version": settings.APP_VERSION
     }
 
@@ -274,7 +260,6 @@ async def health_check():
     return HealthResponse(
         status="healthy" if db_connected else "unhealthy",
         database_connected=db_connected,
-        dify_enabled=is_dify_enabled(),
     )
 
 
@@ -298,13 +283,13 @@ async def lookup_ids(request: IdLookupRequest):
     
     # Dify 형식: process 객체
     if request.process:
-        process_id = clean_request_value(request.process.id)
-        process_name = clean_request_value(request.process.name)
+        process_id = request.process.id
+        process_name = request.process.name
     # 단순 형식: 직접 필드
     if not process_id:
-        process_id = clean_request_value(request.process_id)
+        process_id = request.process_id
     if not process_name:
-        process_name = clean_request_value(request.process_name)
+        process_name = request.process_name
     
     # Process ID 결정: ID가 있으면 사용, 없으면 이름으로 조회
     final_process_id = None
@@ -324,13 +309,13 @@ async def lookup_ids(request: IdLookupRequest):
     
     # Dify 형식: model 객체
     if request.model:
-        model_id = clean_request_value(request.model.id)
-        model_name = clean_request_value(request.model.name)
+        model_id = request.model.id
+        model_name = request.model.name
     # 단순 형식: 직접 필드
     if not model_id:
-        model_id = clean_request_value(request.model_id)
+        model_id = request.model_id
     if not model_name:
-        model_name = clean_request_value(request.model_name)
+        model_name = request.model_name
     
     # Model ID 결정
     final_model_id = None
@@ -350,13 +335,13 @@ async def lookup_ids(request: IdLookupRequest):
     
     # Dify 형식: equipment 객체
     if request.equipment:
-        eqp_id = clean_request_value(request.equipment.id)
-        eqp_name = clean_request_value(request.equipment.name)
+        eqp_id = request.equipment.id
+        eqp_name = request.equipment.name
     # 단순 형식: 직접 필드
     if not eqp_id:
-        eqp_id = clean_request_value(request.eqp_id)
+        eqp_id = request.eqp_id
     if not eqp_name:
-        eqp_name = clean_request_value(request.eqp_name)
+        eqp_name = request.eqp_name
     
     # Equipment ID 결정
     final_eqp_id = None
@@ -380,16 +365,6 @@ async def lookup_ids(request: IdLookupRequest):
     return result
 
 
-def clean_request_value(value: Optional[str]) -> Optional[str]:
-    """요청 값 정리: None, 빈 문자열, 'null' 문자열 처리"""
-    if value is None:
-        return None
-    str_val = str(value).strip()
-    if not str_val or str_val.lower() == 'null':
-        return None
-    return str_val
-
-
 @app.post(
     "/api/v1/informnote/stats/error-code",
     response_model=ErrorCodeStatsResponse,
@@ -402,13 +377,7 @@ async def get_error_code_stats(request: ErrorCodeStatsRequest):
     if not db.test_connection():
         raise HTTPException(status_code=503, detail="데이터베이스에 연결할 수 없습니다.")
     
-    # 요청 값 정리 및 로깅
-    cleaned_process_id = clean_request_value(request.process_id)
-    cleaned_model_id = clean_request_value(request.model_id)
-    cleaned_eqp_id = clean_request_value(request.eqp_id)
-    cleaned_error_code = clean_request_value(request.error_code)
-    
-    logger.info(f"[Error Code 통계] 요청 수신 - process_id: {cleaned_process_id}, model_id: {cleaned_model_id}, eqp_id: {cleaned_eqp_id}, error_code: {cleaned_error_code}, group_by: {request.group_by}")
+    logger.info(f"[Error Code 통계] 요청 수신 - process_id: {request.process_id}, model_id: {request.model_id}, eqp_id: {request.eqp_id}, error_code: {request.error_code}, group_by: {request.group_by}")
     
     try:
         # Period 처리
@@ -455,10 +424,10 @@ async def get_error_code_stats(request: ErrorCodeStatsRequest):
             cursor.execute(sql, {
                 "start_date": format_date_for_db(request.start_date),
                 "end_date": format_date_for_db(request.end_date),
-                "process_id": cleaned_process_id,
-                "model_id": cleaned_model_id,
-                "eqp_id": cleaned_eqp_id,
-                "error_code": cleaned_error_code
+                "process_id": request.process_id,
+                "model_id": request.model_id,
+                "eqp_id": request.eqp_id,
+                "error_code": request.error_code
             })
             
             rows = cursor.fetchall()
@@ -503,12 +472,7 @@ async def get_pm_history(request: PMHistoryRequest):
     if not db.test_connection():
         raise HTTPException(status_code=503, detail="데이터베이스에 연결할 수 없습니다.")
     
-    # 요청 값 정리 및 로깅
-    cleaned_process_id = clean_request_value(request.process_id)
-    cleaned_eqp_id = clean_request_value(request.eqp_id)
-    cleaned_operator = clean_request_value(request.operator)
-    
-    logger.info(f"[PM 이력] 요청 수신 - process_id: {cleaned_process_id}, eqp_id: {cleaned_eqp_id}, operator: {cleaned_operator}, start_date: {request.start_date}, end_date: {request.end_date}, limit: {request.limit}")
+    logger.info(f"[PM 이력] 요청 수신 - process_id: {request.process_id}, eqp_id: {request.eqp_id}, operator: {request.operator}, start_date: {request.start_date}, end_date: {request.end_date}, limit: {request.limit}")
     
     # SQL 템플릿 파일 읽기
     sql = get_sql_template("pm_history.sql")
@@ -519,9 +483,9 @@ async def get_pm_history(request: PMHistoryRequest):
             cursor.execute(sql, {
                 "start_date": format_date_for_db(request.start_date),
                 "end_date": format_date_for_db(request.end_date),
-                "process_id": cleaned_process_id,
-                "eqp_id": cleaned_eqp_id,
-                "operator": cleaned_operator,
+                "process_id": request.process_id,
+                "eqp_id": request.eqp_id,
+                "operator": request.operator,
                 "limit_val": request.limit or 10
             })
             
@@ -558,12 +522,7 @@ async def search_inform_notes(request: SearchRequest):
     if not db.test_connection():
         raise HTTPException(status_code=503, detail="데이터베이스에 연결할 수 없습니다.")
     
-    # 요청 값 정리 및 로깅
-    cleaned_process_id = clean_request_value(request.process_id)
-    cleaned_eqp_id = clean_request_value(request.eqp_id)
-    cleaned_operator = clean_request_value(request.operator)
-    
-    logger.info(f"[상세 검색] 요청 수신 - process_id: {cleaned_process_id}, eqp_id: {cleaned_eqp_id}, operator: {cleaned_operator}, start_date: {request.start_date}, end_date: {request.end_date}, limit: {request.limit}")
+    logger.info(f"[상세 검색] 요청 수신 - process_id: {request.process_id}, eqp_id: {request.eqp_id}, operator: {request.operator}, start_date: {request.start_date}, end_date: {request.end_date}, limit: {request.limit}")
     
     # SQL 템플릿 파일 읽기
     sql = get_sql_template("search_inform_notes.sql")
@@ -574,9 +533,9 @@ async def search_inform_notes(request: SearchRequest):
             cursor.execute(sql, {
                 "start_date": format_date_for_db(request.start_date),
                 "end_date": format_date_for_db(request.end_date),
-                "process_id": cleaned_process_id,
-                "eqp_id": cleaned_eqp_id,
-                "operator": cleaned_operator,
+                "process_id": request.process_id,
+                "eqp_id": request.eqp_id,
+                "operator": request.operator,
                 "status_id": request.status_id,
                 "limit_val": request.limit or 20
             })
@@ -605,60 +564,6 @@ async def search_inform_notes(request: SearchRequest):
     except Exception as e:
         logger.error(f"[상세 검색] 조회 중 오류: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"상세 조회 중 오류가 발생했습니다: {str(e)}")
-
-
-@app.post("/ask", response_model=AnswerResponse, tags=["질문-답변"])
-async def ask_question(request: QuestionRequest):
-    """
-    질문을 받고 답변을 제공하는 엔드포인트
-    """
-    question = request.question.strip() if request.question else ""
-    context = request.context.strip() if request.context else None
-    
-    if not question:
-        raise HTTPException(status_code=400, detail="질문이 비어있습니다.")
-    
-    try:
-        answer = await generate_answer(question, context)
-        return AnswerResponse(
-            question=question,
-            answer=answer,
-            success=True
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"[질문-답변] 오류 발생: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"서버 오류: {str(e)}")
-
-
-async def generate_answer(question: str, context: Optional[str] = None) -> str:
-    """질문에 대한 답변 생성"""
-    # Dify API 호출 시도
-    if is_dify_enabled():
-        try:
-            return await request_answer(question, context)
-        except DifyClientError as e:
-            logger.warning(f"[Dify API] 실패: {e}, Oracle DB 로직으로 대체")
-        except Exception as e:
-            logger.error(f"[Dify API] 오류: {e}", exc_info=True)
-    
-    # Oracle DB 기반 답변 생성 (간단한 폴백)
-    if not db.test_connection():
-        return "데이터베이스에 연결할 수 없습니다."
-    
-    with db.get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT SYSDATE FROM DUAL")
-        result = cursor.fetchone()
-        cursor.close()
-    
-    if "시간" in question or "날짜" in question:
-        return f"현재 데이터베이스 시간: {result[0] if result else '알 수 없음'}"
-    elif "연결" in question or "상태" in question:
-        return "데이터베이스 연결이 정상적으로 작동하고 있습니다."
-    else:
-        return f"질문 '{question}'에 대한 답변을 생성했습니다. (데이터베이스 연결 확인됨)"
 
 
 if __name__ == "__main__":
