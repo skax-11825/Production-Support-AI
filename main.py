@@ -327,15 +327,15 @@ async def lookup_ids(request: IdLookupRequest):
     process_id = None
     process_name = None
     
-    # Dify 형식: process 객체
+    # Dify 형식: process 객체 (빈 문자열이나 null 값 처리)
     if request.process:
         process_id = clean_request_value(request.process.id)
         process_name = clean_request_value(request.process.name)
     # 단순 형식: 직접 필드
     if not process_id:
-        process_id = clean_request_value(request.process_id)
+        process_id = clean_request_value(getattr(request, 'process_id', None))
     if not process_name:
-        process_name = clean_request_value(request.process_name)
+        process_name = clean_request_value(getattr(request, 'process_name', None))
     
     # Process ID 결정: ID 또는 NAME으로 DB 조회
     final_process_id = None
@@ -350,15 +350,15 @@ async def lookup_ids(request: IdLookupRequest):
     model_id = None
     model_name = None
     
-    # Dify 형식: model 객체
+    # Dify 형식: model 객체 (빈 문자열이나 null 값 처리)
     if request.model:
         model_id = clean_request_value(request.model.id)
         model_name = clean_request_value(request.model.name)
     # 단순 형식: 직접 필드
     if not model_id:
-        model_id = clean_request_value(request.model_id)
+        model_id = clean_request_value(getattr(request, 'model_id', None))
     if not model_name:
-        model_name = clean_request_value(request.model_name)
+        model_name = clean_request_value(getattr(request, 'model_name', None))
     
     # Model ID 결정: ID 또는 NAME으로 DB 조회
     final_model_id = None
@@ -373,15 +373,15 @@ async def lookup_ids(request: IdLookupRequest):
     eqp_id = None
     eqp_name = None
     
-    # Dify 형식: equipment 객체
+    # Dify 형식: equipment 객체 (빈 문자열이나 null 값 처리)
     if request.equipment:
         eqp_id = clean_request_value(request.equipment.id)
         eqp_name = clean_request_value(request.equipment.name)
     # 단순 형식: 직접 필드
     if not eqp_id:
-        eqp_id = clean_request_value(request.eqp_id)
+        eqp_id = clean_request_value(getattr(request, 'eqp_id', None))
     if not eqp_name:
-        eqp_name = clean_request_value(request.eqp_name)
+        eqp_name = clean_request_value(getattr(request, 'eqp_name', None))
     
     # Equipment ID 결정: ID 또는 NAME으로 DB 조회
     final_eqp_id = None
