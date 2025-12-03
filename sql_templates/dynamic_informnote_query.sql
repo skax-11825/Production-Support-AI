@@ -1,9 +1,9 @@
 -- ============================================================
--- Dynamic SQL Template for INFORM_NOTE
+-- Dynamic SQL Template for INFORMNOTE_TABLE
 -- Purpose:
 --   - Allow Dify → Backend → Oracle DB workflow to bind optional filters
 --   - Every bind variable is nullable; if NULL, that condition is skipped
--- Columns are based on normalized_data.xlsx / Inform_note schema
+-- Columns are based on data_table.csv / INFORMNOTE_TABLE schema
 -- ============================================================
 
 /* Bind Variables (all optional unless noted)
@@ -55,7 +55,7 @@ WITH params AS (
         COUNT(CASE WHEN down_type = 'UNSCHEDULED' THEN 1 END)  AS unscheduled_count,
         COUNT(CASE WHEN status_id = 'COMPLETED' THEN 1 END)    AS completed_count,
         COUNT(CASE WHEN status_id = 'IN_PROGRESS' THEN 1 END)  AS in_progress_count
-    FROM INFORM_NOTE t, params p
+    FROM INFORMNOTE_TABLE t, params p
     WHERE (p.site_id        IS NULL OR t.site_id = p.site_id)
       AND (p.factory_id     IS NULL OR t.factory_id = p.factory_id)
       AND (p.line_id        IS NULL OR t.line_id = p.line_id)
@@ -91,7 +91,6 @@ SELECT
     t.operator,
     t.first_detector,
     t.status_id,
-    t.link,
     s.total_count,
     s.total_minutes,
     s.avg_minutes,
@@ -101,7 +100,7 @@ SELECT
     s.unscheduled_count,
     s.completed_count,
     s.in_progress_count
-FROM INFORM_NOTE t
+FROM INFORMNOTE_TABLE t
 JOIN params p ON 1=1
 CROSS JOIN stats s
 WHERE (p.site_id        IS NULL OR t.site_id = p.site_id)

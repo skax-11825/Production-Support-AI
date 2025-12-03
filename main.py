@@ -5,13 +5,15 @@ FastAPI를 사용한 REST API 엔드포인트
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from typing import Optional, List, Dict
+from typing import Optional, List
 from datetime import date
 import logging
 import json
 from database import db
 from config import settings
 from dify_client import is_dify_enabled, request_answer, DifyClientError
+from utils import read_sql_file
+from pathlib import Path
 
 # 로깅 설정
 logging.basicConfig(
@@ -54,16 +56,38 @@ class AnswerResponse(BaseModel):
     success: bool
 
 
+class ProcessInfo(BaseModel):
+    """Process 정보 모델"""
+    id: Optional[str] = None
+    name: Optional[str] = None
+
+
+class ModelInfo(BaseModel):
+    """Model 정보 모델"""
+    id: Optional[str] = None
+    name: Optional[str] = None
+
+
+class EquipmentInfo(BaseModel):
+    """Equipment 정보 모델"""
+    id: Optional[str] = None
+    name: Optional[str] = None
+
+
 class IdLookupRequest(BaseModel):
-    """ID 조회 요청 모델"""
+    """ID 조회 요청 모델 - Dify 형식 및 단순 형식 모두 지원"""
+    # Dify 형식: process/model/equipment 객체
+    process: Optional[ProcessInfo] = None
+    model: Optional[ModelInfo] = None
+    equipment: Optional[EquipmentInfo] = None
+    
+    # 단순 형식: 직접 필드
+    process_id: Optional[str] = None
     process_name: Optional[str] = None
+    model_id: Optional[str] = None
     model_name: Optional[str] = None
+    eqp_id: Optional[str] = None
     eqp_name: Optional[str] = None
-    proc_keyword: Optional[str] = None
-    model_keyword: Optional[str] = None
-    eqp_keyword: Optional[str] = None
-    text: Optional[str] = None
-    structured_output: Optional[dict] = None
 
 
 class IdLookupResponse(BaseModel):
@@ -172,114 +196,21 @@ def format_date_for_db(d: Optional[date]) -> Optional[str]:
     return d.strftime('%Y-%m-%d') if d else None
 
 
-def extract_keyword_from_dify(request: IdLookupRequest) -> Dict[str, Optional[str]]:
-    """Dify 구조화 출력에서 키워드 추출"""
-    extracted = {}
-    
-    # structured_output에서 추출
-    if request.structured_output:
-        if isinstance(request.structured_output, dict):
-            extracted.update(request.structured_output)
-        else:
-            logger.warning(f"[키워드 추출] structured_output이 dict가 아님: {type(request.structured_output)}")
-    
-    # text 필드가 JSON 문자열인 경우 파싱
-    if request.text:
-        try:
-            text_content = request.text.strip()
-            # null 문자열 제거
-            if text_content.lower() == 'null' or not text_content:
-                logger.debug("[키워드 추출] text 필드가 null이거나 비어있음")
-            else:
-                parsed = json.loads(text_content)
-                if isinstance(parsed, dict):
-                    extracted.update(parsed)
-                else:
-                    logger.warning(f"[키워드 추출] text 필드 파싱 결과가 dict가 아님: {type(parsed)}")
-        except json.JSONDecodeError as e:
-            logger.warning(f"[키워드 추출] text 필드 JSON 파싱 실패: {e}, 원본: {request.text[:100]}")
-        except Exception as e:
-            logger.warning(f"[키워드 추출] text 필드 처리 중 오류: {e}")
-    
-    # 최종 매핑: keyword > name > extracted
-    result = {}
-    
-    def clean_value(value):
-        """값 정리: None, 빈 문자열, 'null' 문자열, 변수 참조 패턴 처리"""
-        if value is None:
-            return None
-        str_val = str(value).strip()
-        if not str_val or str_val.lower() == 'null':
-            return None
-        
-        # OR 연산자(||)로 분리되어 있는 경우 처리
-        if '||' in str_val:
-            parts = [part.strip() for part in str_val.split('||')]
-            # 변수 참조가 아닌 실제 값만 추출
-            for part in parts:
-                if part and not is_variable_reference(part):
-                    logger.info(f"[키워드 추출] OR 연산자에서 실제 값 추출: '{part}' (전체: '{str_val}')")
-                    return part
-            # 모두 변수 참조인 경우
-            logger.warning(f"[키워드 추출] OR 연산자로 분리된 값이 모두 변수 참조: {str_val}")
-            return None
-        
-        # 변수 참조 패턴 확인
-        if is_variable_reference(str_val):
-            logger.warning(f"[키워드 추출] 변수 참조 패턴 감지, 무시: {str_val}")
-            return None
-        
-        return str_val
-    
-    def is_variable_reference(value: str) -> bool:
-        """변수 참조 패턴인지 확인"""
-        if not value or not isinstance(value, str):
-            return False
-        value_lower = value.lower().strip()
-        # 변수 참조 패턴: 숫자.structured_output.keyword 또는 .keyword, .output 등
-        if '.' in value_lower:
-            # 점(.)으로 시작하거나, 숫자.xxx.xxx 패턴
-            if value_lower.startswith('.') or (
-                any(char.isdigit() for char in value_lower[:10]) and 
-                any(kw in value_lower for kw in ['structured_output', 'keyword', 'output', 'variable'])
-            ):
-                return True
-        return False
-    
-    # process_name 매핑
-    process_value = (
-        clean_value(extracted.get('proc_keyword')) or
-        clean_value(getattr(request, 'proc_keyword', None)) or
-        clean_value(extracted.get('process_name')) or
-        clean_value(getattr(request, 'process_name', None))
-    )
-    result['process_name'] = process_value
-    
-    # model_name 매핑
-    model_value = (
-        clean_value(extracted.get('model_keyword')) or
-        clean_value(getattr(request, 'model_keyword', None)) or
-        clean_value(extracted.get('model_name')) or
-        clean_value(getattr(request, 'model_name', None))
-    )
-    result['model_name'] = model_value
-    
-    # eqp_name 매핑
-    eqp_value = (
-        clean_value(extracted.get('eqp_keyword')) or
-        clean_value(getattr(request, 'eqp_keyword', None)) or
-        clean_value(extracted.get('eqp_name')) or
-        clean_value(getattr(request, 'eqp_name', None))
-    )
-    result['eqp_name'] = eqp_value
-    
-    logger.info(f"[키워드 추출] 최종 결과: {result}")
-    return result
+def get_sql_template(filename: str) -> str:
+    """SQL 템플릿 파일 읽기"""
+    template_path = Path(__file__).parent / "sql_templates" / filename
+    sql_content = read_sql_file(template_path)
+    if not sql_content:
+        logger.error(f"SQL 템플릿 파일을 읽을 수 없습니다: {template_path}")
+        raise HTTPException(status_code=500, detail=f"SQL 템플릿 파일을 읽을 수 없습니다: {filename}")
+    return sql_content.strip()
+
+
 
 
 def lookup_id_by_name(table: str, id_col: str, name_col: str, search_value: str) -> Optional[str]:
     """테이블에서 이름으로 ID 조회"""
-    if not search_value:
+    if not search_value or not search_value.strip():
         return None
     
     try:
@@ -292,7 +223,7 @@ def lookup_id_by_name(table: str, id_col: str, name_col: str, search_value: str)
                    OR UPPER(TRIM({name_col})) LIKE UPPER('%' || TRIM(:2) || '%')
                 FETCH FIRST 1 ROWS ONLY
             """
-            cursor.execute(query, [search_value, search_value])
+            cursor.execute(query, [search_value.strip(), search_value.strip()])
             row = cursor.fetchone()
             cursor.close()
             return row[0] if row else None
@@ -352,40 +283,109 @@ async def lookup_ids(request: IdLookupRequest):
     """
     ID 조회 API
     
-    process_name, model_name, eqp_name 또는 proc_keyword, model_keyword, eqp_keyword 중
-    하나 이상을 입력받아 해당하는 ID 값을 반환합니다.
+    process_id/process_name, model_id/model_name, eqp_id/eqp_name 또는
+    Dify 형식(process/model/equipment 객체)으로 ID 조회.
+    
+    - ID가 제공되면 그대로 반환
+    - 이름만 제공되면 DB에서 ID 조회 후 반환
     """
-    # 디버깅: 요청 본문 전체 로깅
     request_dict = request.model_dump(exclude_none=True)
     logger.info(f"[ID 조회] 요청 수신 - 전체 요청: {json.dumps(request_dict, ensure_ascii=False)}")
     
-    keywords = extract_keyword_from_dify(request)
-    logger.info(f"[ID 조회] 추출된 keywords: {keywords}")
+    # Process ID 처리
+    process_id = None
+    process_name = None
     
-    # 키워드가 모두 None인 경우 경고
-    if not any(keywords.values()):
-        logger.warning(f"[ID 조회] 모든 키워드가 None입니다. 원본 요청: {request_dict}")
+    # Dify 형식: process 객체
+    if request.process:
+        process_id = clean_request_value(request.process.id)
+        process_name = clean_request_value(request.process.name)
+    # 단순 형식: 직접 필드
+    if not process_id:
+        process_id = clean_request_value(request.process_id)
+    if not process_name:
+        process_name = clean_request_value(request.process_name)
+    
+    # Process ID 결정: ID가 있으면 사용, 없으면 이름으로 조회
+    final_process_id = None
+    if process_id:
+        final_process_id = process_id
+        logger.info(f"[ID 조회] process_id 직접 제공: {process_id}")
+    elif process_name:
+        final_process_id = lookup_id_by_name("PROCESS", "PROCESS_ID", "PROCESS_NAME", process_name)
+        if final_process_id:
+            logger.info(f"[ID 조회] process_name '{process_name}'을(를) ID '{final_process_id}'로 변환")
+        else:
+            logger.warning(f"[ID 조회] process_name '{process_name}'에 해당하는 ID를 찾을 수 없음")
+    
+    # Model ID 처리
+    model_id = None
+    model_name = None
+    
+    # Dify 형식: model 객체
+    if request.model:
+        model_id = clean_request_value(request.model.id)
+        model_name = clean_request_value(request.model.name)
+    # 단순 형식: 직접 필드
+    if not model_id:
+        model_id = clean_request_value(request.model_id)
+    if not model_name:
+        model_name = clean_request_value(request.model_name)
+    
+    # Model ID 결정
+    final_model_id = None
+    if model_id:
+        final_model_id = model_id
+        logger.info(f"[ID 조회] model_id 직접 제공: {model_id}")
+    elif model_name:
+        final_model_id = lookup_id_by_name("MODEL", "MODEL_ID", "MODEL_NAME", model_name)
+        if final_model_id:
+            logger.info(f"[ID 조회] model_name '{model_name}'을(를) ID '{final_model_id}'로 변환")
+        else:
+            logger.warning(f"[ID 조회] model_name '{model_name}'에 해당하는 ID를 찾을 수 없음")
+    
+    # Equipment ID 처리
+    eqp_id = None
+    eqp_name = None
+    
+    # Dify 형식: equipment 객체
+    if request.equipment:
+        eqp_id = clean_request_value(request.equipment.id)
+        eqp_name = clean_request_value(request.equipment.name)
+    # 단순 형식: 직접 필드
+    if not eqp_id:
+        eqp_id = clean_request_value(request.eqp_id)
+    if not eqp_name:
+        eqp_name = clean_request_value(request.eqp_name)
+    
+    # Equipment ID 결정
+    final_eqp_id = None
+    if eqp_id:
+        final_eqp_id = eqp_id
+        logger.info(f"[ID 조회] eqp_id 직접 제공: {eqp_id}")
+    elif eqp_name:
+        final_eqp_id = lookup_id_by_name("EQUIPMENT", "EQP_ID", "EQP_NAME", eqp_name)
+        if final_eqp_id:
+            logger.info(f"[ID 조회] eqp_name '{eqp_name}'을(를) ID '{final_eqp_id}'로 변환")
+        else:
+            logger.warning(f"[ID 조회] eqp_name '{eqp_name}'에 해당하는 ID를 찾을 수 없음")
     
     result = IdLookupResponse(
-        process_id=lookup_id_by_name("PROCESS", "PROCESS_ID", "PROCESS_NAME", keywords.get("process_name")),
-        model_id=lookup_id_by_name("MODEL", "MODEL_ID", "MODEL_NAME", keywords.get("model_name")),
-        eqp_id=lookup_id_by_name("EQUIPMENT", "EQP_ID", "EQP_NAME", keywords.get("eqp_name"))
+        process_id=final_process_id,
+        model_id=final_model_id,
+        eqp_id=final_eqp_id
     )
     
     logger.info(f"[ID 조회] 최종 결과: {result.model_dump()}")
     return result
 
 
-def clean_request_value(value: Optional[str], field_name: str = "") -> Optional[str]:
-    """요청 값 정리: 변수 참조 패턴, null 문자열 처리"""
+def clean_request_value(value: Optional[str]) -> Optional[str]:
+    """요청 값 정리: None, 빈 문자열, 'null' 문자열 처리"""
     if value is None:
         return None
     str_val = str(value).strip()
     if not str_val or str_val.lower() == 'null':
-        return None
-    # Dify 변수 참조 패턴 감지 ({{ ... }} 또는 http7.response.xxx)
-    if '{{' in str_val or '}}' in str_val or 'http' in str_val.lower() or '.response.' in str_val.lower():
-        logger.warning(f"[요청 값 정리] {field_name} 필드에 변수 참조 패턴 감지, 무시: {str_val}")
         return None
     return str_val
 
@@ -403,27 +403,12 @@ async def get_error_code_stats(request: ErrorCodeStatsRequest):
         raise HTTPException(status_code=503, detail="데이터베이스에 연결할 수 없습니다.")
     
     # 요청 값 정리 및 로깅
-    cleaned_process_id = clean_request_value(request.process_id, "process_id")
-    cleaned_model_id = clean_request_value(request.model_id, "model_id")
-    cleaned_eqp_id = clean_request_value(request.eqp_id, "eqp_id")
-    cleaned_error_code = clean_request_value(request.error_code, "error_code")
+    cleaned_process_id = clean_request_value(request.process_id)
+    cleaned_model_id = clean_request_value(request.model_id)
+    cleaned_eqp_id = clean_request_value(request.eqp_id)
+    cleaned_error_code = clean_request_value(request.error_code)
     
     logger.info(f"[Error Code 통계] 요청 수신 - process_id: {cleaned_process_id}, model_id: {cleaned_model_id}, eqp_id: {cleaned_eqp_id}, error_code: {cleaned_error_code}, group_by: {request.group_by}")
-    
-    # error_code 필드에 장비명이나 공정명이 들어온 경우 감지
-    if cleaned_error_code:
-        # 장비명 패턴 (ASML_PH_#001, M14-PH-001 등)
-        if 'ASML' in cleaned_error_code.upper() or 'M14-' in cleaned_error_code or '#' in cleaned_error_code:
-            logger.warning(f"[Error Code 통계] error_code 필드에 장비명이 들어옴: {cleaned_error_code}, None으로 처리")
-            cleaned_error_code = None
-        # 공정명 패턴 (Cleaning, CMP 등)
-        elif cleaned_error_code.upper() in ['CLEANING', 'CMP', 'DIFFUSION', 'ETCH', 'PHOTOLITHOGRAPHY']:
-            logger.warning(f"[Error Code 통계] error_code 필드에 공정명이 들어옴: {cleaned_error_code}, None으로 처리")
-            cleaned_error_code = None
-    
-    # 모든 필터가 None인 경우 경고 (전체 데이터 조회됨)
-    if not any([cleaned_process_id, cleaned_model_id, cleaned_eqp_id, cleaned_error_code, request.start_date, request.end_date]):
-        logger.warning(f"[Error Code 통계] 모든 필터가 None입니다. 전체 데이터 조회됩니다. (원본 요청: process_id={request.process_id}, error_code={request.error_code})")
     
     try:
         # Period 처리
@@ -457,34 +442,13 @@ async def get_error_code_stats(request: ErrorCodeStatsRequest):
             "n.error_code ASC"
         ]
         
-        sql = f"""
-            SELECT
-                {period_select},
-                n.process_id,
-                p.process_name,
-                n.model_id,
-                m.model_name,
-                n.eqp_id,
-                e.eqp_name,
-                n.error_code,
-                ec.error_desc AS error_des,
-                COUNT(*) AS event_cnt,
-                SUM(n.down_time_minutes) AS total_down_time_minutes
-            FROM INFORM_NOTE n
-            LEFT JOIN PROCESS p ON n.process_id = p.process_id
-            LEFT JOIN EQUIPMENT e ON n.eqp_id = e.eqp_id
-            LEFT JOIN MODEL m ON n.model_id = m.model_id
-            LEFT JOIN ERROR_CODE ec ON n.error_code = ec.error_code
-            WHERE (:start_date IS NULL OR n.down_start_time >= TO_DATE(:start_date, 'YYYY-MM-DD'))
-              AND (:end_date IS NULL OR n.down_start_time < TO_DATE(:end_date, 'YYYY-MM-DD') + 1)
-              AND (:process_id IS NULL OR n.process_id = :process_id)
-              AND (:model_id IS NULL OR n.model_id = :model_id)
-              AND (:eqp_id IS NULL OR n.eqp_id = :eqp_id)
-              AND (:error_code IS NULL OR n.error_code = :error_code)
-              AND n.down_type_id = 1
-            GROUP BY {', '.join(group_cols)}
-            ORDER BY {', '.join(order_cols)}
-        """
+        # SQL 템플릿 파일 읽기 및 동적 부분 치환
+        sql_template = get_sql_template("error_code_stats.sql")
+        sql = sql_template.format(
+            period_select=period_select,
+            group_by_clause=', '.join(group_cols),
+            order_by_clause=', '.join(order_cols)
+        )
         
         with db.get_connection() as conn:
             cursor = conn.cursor()
@@ -540,33 +504,14 @@ async def get_pm_history(request: PMHistoryRequest):
         raise HTTPException(status_code=503, detail="데이터베이스에 연결할 수 없습니다.")
     
     # 요청 값 정리 및 로깅
-    cleaned_process_id = clean_request_value(request.process_id, "process_id")
-    cleaned_eqp_id = clean_request_value(request.eqp_id, "eqp_id")
-    cleaned_operator = clean_request_value(request.operator, "operator")
+    cleaned_process_id = clean_request_value(request.process_id)
+    cleaned_eqp_id = clean_request_value(request.eqp_id)
+    cleaned_operator = clean_request_value(request.operator)
     
     logger.info(f"[PM 이력] 요청 수신 - process_id: {cleaned_process_id}, eqp_id: {cleaned_eqp_id}, operator: {cleaned_operator}, start_date: {request.start_date}, end_date: {request.end_date}, limit: {request.limit}")
     
-    # 모든 필터가 None인 경우 경고
-    if not any([cleaned_process_id, cleaned_eqp_id, cleaned_operator, request.start_date, request.end_date]):
-        logger.warning(f"[PM 이력] 모든 필터가 None입니다. 전체 데이터 조회됩니다. (원본 요청: process_id={request.process_id}, eqp_id={request.eqp_id}, operator={request.operator})")
-    
-    sql = """
-        SELECT
-            TO_CHAR(n.down_start_time, 'YYYY-MM-DD') as down_date,
-            dt.down_type_name,
-            n.down_time_minutes,
-            n.operator
-        FROM INFORM_NOTE n
-        LEFT JOIN DOWN_TYPE dt ON n.down_type_id = dt.down_type_id
-        WHERE (:start_date IS NULL OR n.down_start_time >= TO_DATE(:start_date, 'YYYY-MM-DD'))
-          AND (:end_date IS NULL OR n.down_start_time < TO_DATE(:end_date, 'YYYY-MM-DD') + 1)
-          AND (:process_id IS NULL OR n.process_id = :process_id)
-          AND (:eqp_id IS NULL OR n.eqp_id = :eqp_id)
-          AND (:operator IS NULL OR n.operator LIKE '%' || :operator || '%')
-          AND n.down_type_id = 0
-        ORDER BY n.down_start_time DESC
-        FETCH FIRST :limit_val ROWS ONLY
-    """
+    # SQL 템플릿 파일 읽기
+    sql = get_sql_template("pm_history.sql")
     
     try:
         with db.get_connection() as conn:
@@ -614,42 +559,14 @@ async def search_inform_notes(request: SearchRequest):
         raise HTTPException(status_code=503, detail="데이터베이스에 연결할 수 없습니다.")
     
     # 요청 값 정리 및 로깅
-    cleaned_process_id = clean_request_value(request.process_id, "process_id")
-    cleaned_eqp_id = clean_request_value(request.eqp_id, "eqp_id")
-    cleaned_operator = clean_request_value(request.operator, "operator")
+    cleaned_process_id = clean_request_value(request.process_id)
+    cleaned_eqp_id = clean_request_value(request.eqp_id)
+    cleaned_operator = clean_request_value(request.operator)
     
     logger.info(f"[상세 검색] 요청 수신 - process_id: {cleaned_process_id}, eqp_id: {cleaned_eqp_id}, operator: {cleaned_operator}, start_date: {request.start_date}, end_date: {request.end_date}, limit: {request.limit}")
     
-    # 모든 필터가 None인 경우 경고
-    if not any([cleaned_process_id, cleaned_eqp_id, cleaned_operator, request.start_date, request.end_date]):
-        logger.warning(f"[상세 검색] 모든 필터가 None입니다. 전체 데이터 조회됩니다. (원본 요청: process_id={request.process_id}, eqp_id={request.eqp_id})")
-    
-    sql = """
-        SELECT
-            n.informnote_id,
-            TO_CHAR(n.down_start_time, 'YYYY-MM-DD HH24:MI:SS') as down_start_time,
-            p.process_name,
-            e.eqp_name,
-            n.error_code,
-            ec.error_desc,
-            n.act_content,
-            n.operator,
-            n.status_id,
-            s.status_name
-        FROM INFORM_NOTE n
-        LEFT JOIN PROCESS p ON n.process_id = p.process_id
-        LEFT JOIN EQUIPMENT e ON n.eqp_id = e.eqp_id
-        LEFT JOIN ERROR_CODE ec ON n.error_code = ec.error_code
-        LEFT JOIN STATUS s ON n.status_id = s.status_id
-        WHERE (:start_date IS NULL OR n.down_start_time >= TO_DATE(:start_date, 'YYYY-MM-DD'))
-          AND (:end_date IS NULL OR n.down_start_time < TO_DATE(:end_date, 'YYYY-MM-DD') + 1)
-          AND (:process_id IS NULL OR n.process_id = :process_id)
-          AND (:eqp_id IS NULL OR n.eqp_id = :eqp_id)
-          AND (:operator IS NULL OR n.operator LIKE '%' || :operator || '%')
-          AND (:status_id IS NULL OR n.status_id = :status_id)
-        ORDER BY n.down_start_time DESC
-        FETCH FIRST :limit_val ROWS ONLY
-    """
+    # SQL 템플릿 파일 읽기
+    sql = get_sql_template("search_inform_notes.sql")
     
     try:
         with db.get_connection() as conn:
