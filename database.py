@@ -31,6 +31,18 @@ class Database:
                 increment=1
             )
             logger.info("Oracle DB 연결 풀이 생성되었습니다.")
+            
+            # 연결 풀 생성 시 한 번만 버전 정보 조회
+            try:
+                with self.pool.acquire() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT BANNER FROM V$VERSION WHERE ROWNUM = 1")
+                    version = cursor.fetchone()
+                    if version:
+                        logger.info(f"Oracle DB 버전: {version[0]}")
+                    cursor.close()
+            except Exception:
+                pass  # 버전 조회 실패해도 연결 풀 생성은 성공한 것으로 간주
         except oracledb.Error as e:
             error, = e.args
             logger.error(f"Oracle DB 연결 풀 생성 실패: {error.message}")
@@ -70,13 +82,6 @@ class Database:
                 cursor = conn.cursor()
                 cursor.execute("SELECT 1 FROM DUAL")
                 result = cursor.fetchone()
-                
-                # 데이터베이스 버전 정보 조회
-                cursor.execute("SELECT BANNER FROM V$VERSION WHERE ROWNUM = 1")
-                version = cursor.fetchone()
-                if version:
-                    logger.info(f"Oracle DB 버전: {version[0]}")
-                
                 cursor.close()
                 return result is not None
         except oracledb.Error as e:

@@ -6,7 +6,7 @@ Dify에서 받은 입력값으로 DB를 조회하고 결과를 반환합니다.
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Tuple
 from datetime import date
 import logging
 import json
@@ -197,30 +197,6 @@ def get_sql_template(filename: str) -> str:
 
 
 
-def lookup_id_by_name(table: str, id_col: str, name_col: str, search_value: str) -> Optional[str]:
-    """테이블에서 이름으로 ID 조회"""
-    if not search_value or not search_value.strip():
-        return None
-    
-    try:
-        with db.get_connection() as conn:
-            cursor = conn.cursor()
-            query = f"""
-                SELECT {id_col} 
-                FROM {table} 
-                WHERE UPPER(TRIM({id_col})) LIKE UPPER('%' || TRIM(:1) || '%') 
-                   OR UPPER(TRIM({name_col})) LIKE UPPER('%' || TRIM(:2) || '%')
-                FETCH FIRST 1 ROWS ONLY
-            """
-            cursor.execute(query, [search_value.strip(), search_value.strip()])
-            row = cursor.fetchone()
-            cursor.close()
-            return row[0] if row else None
-    except Exception as e:
-        logger.error(f"ID 조회 오류 ({table}): {e}")
-        return None
-
-
 def lookup_id_by_id_or_name(table: str, id_col: str, name_col: str, id_value: Optional[str] = None, name_value: Optional[str] = None) -> Optional[str]:
     """테이블에서 ID 또는 NAME으로 실제 ID 조회 (OR 조건)"""
     id_val = clean_request_value(id_value)
@@ -262,6 +238,39 @@ def lookup_id_by_id_or_name(table: str, id_col: str, name_col: str, id_value: Op
     except Exception as e:
         logger.error(f"ID/NAME 조회 오류 ({table}): {e}")
         return None
+
+
+def extract_id_from_request(request: IdLookupRequest, entity_type: str, info_obj: Optional[BaseModel] = None) -> Tuple[Optional[str], Optional[str]]:
+    """요청에서 ID와 NAME 추출 (Dify 형식 및 단순 형식 지원)"""
+    id_val = None
+    name_val = None
+    
+    # Dify 형식: 객체에서 추출
+    if info_obj:
+        id_val = clean_request_value(getattr(info_obj, 'id', None))
+        name_val = clean_request_value(getattr(info_obj, 'name', None))
+    
+    # 단순 형식: 직접 필드에서 추출
+    if not id_val:
+        id_val = clean_request_value(getattr(request, f'{entity_type}_id', None))
+    if not name_val:
+        name_val = clean_request_value(getattr(request, f'{entity_type}_name', None))
+    
+    return id_val, name_val
+
+
+def resolve_entity_id(table: str, id_col: str, name_col: str, entity_type: str, id_val: Optional[str], name_val: Optional[str]) -> Optional[str]:
+    """엔티티 ID 해결 및 로깅"""
+    if not id_val and not name_val:
+        return None
+    
+    final_id = lookup_id_by_id_or_name(table, id_col, name_col, id_val, name_val)
+    if final_id:
+        logger.info(f"[ID 조회] {entity_type} (id={id_val}, name={name_val}) -> ID '{final_id}'")
+    else:
+        logger.warning(f"[ID 조회] {entity_type} (id={id_val}, name={name_val})에 해당하는 ID를 찾을 수 없음")
+    
+    return final_id
 
 
 # ============================================================================
@@ -324,73 +333,16 @@ async def lookup_ids(request: IdLookupRequest):
     logger.info(f"[ID 조회] 요청 수신 - 전체 요청: {json.dumps(request_dict, ensure_ascii=False)}")
     
     # Process ID 처리
-    process_id = None
-    process_name = None
-    
-    # Dify 형식: process 객체 (빈 문자열이나 null 값 처리)
-    if request.process:
-        process_id = clean_request_value(request.process.id)
-        process_name = clean_request_value(request.process.name)
-    # 단순 형식: 직접 필드
-    if not process_id:
-        process_id = clean_request_value(getattr(request, 'process_id', None))
-    if not process_name:
-        process_name = clean_request_value(getattr(request, 'process_name', None))
-    
-    # Process ID 결정: ID 또는 NAME으로 DB 조회
-    final_process_id = None
-    if process_id or process_name:
-        final_process_id = lookup_id_by_id_or_name("PROCESS", "PROCESS_ID", "PROCESS_NAME", process_id, process_name)
-        if final_process_id:
-            logger.info(f"[ID 조회] process (id={process_id}, name={process_name}) -> ID '{final_process_id}'")
-        else:
-            logger.warning(f"[ID 조회] process (id={process_id}, name={process_name})에 해당하는 ID를 찾을 수 없음")
+    process_id, process_name = extract_id_from_request(request, 'process', request.process)
+    final_process_id = resolve_entity_id("PROCESS", "PROCESS_ID", "PROCESS_NAME", "process", process_id, process_name)
     
     # Model ID 처리
-    model_id = None
-    model_name = None
-    
-    # Dify 형식: model 객체 (빈 문자열이나 null 값 처리)
-    if request.model:
-        model_id = clean_request_value(request.model.id)
-        model_name = clean_request_value(request.model.name)
-    # 단순 형식: 직접 필드
-    if not model_id:
-        model_id = clean_request_value(getattr(request, 'model_id', None))
-    if not model_name:
-        model_name = clean_request_value(getattr(request, 'model_name', None))
-    
-    # Model ID 결정: ID 또는 NAME으로 DB 조회
-    final_model_id = None
-    if model_id or model_name:
-        final_model_id = lookup_id_by_id_or_name("MODEL", "MODEL_ID", "MODEL_NAME", model_id, model_name)
-        if final_model_id:
-            logger.info(f"[ID 조회] model (id={model_id}, name={model_name}) -> ID '{final_model_id}'")
-        else:
-            logger.warning(f"[ID 조회] model (id={model_id}, name={model_name})에 해당하는 ID를 찾을 수 없음")
+    model_id, model_name = extract_id_from_request(request, 'model', request.model)
+    final_model_id = resolve_entity_id("MODEL", "MODEL_ID", "MODEL_NAME", "model", model_id, model_name)
     
     # Equipment ID 처리
-    eqp_id = None
-    eqp_name = None
-    
-    # Dify 형식: equipment 객체 (빈 문자열이나 null 값 처리)
-    if request.equipment:
-        eqp_id = clean_request_value(request.equipment.id)
-        eqp_name = clean_request_value(request.equipment.name)
-    # 단순 형식: 직접 필드
-    if not eqp_id:
-        eqp_id = clean_request_value(getattr(request, 'eqp_id', None))
-    if not eqp_name:
-        eqp_name = clean_request_value(getattr(request, 'eqp_name', None))
-    
-    # Equipment ID 결정: ID 또는 NAME으로 DB 조회
-    final_eqp_id = None
-    if eqp_id or eqp_name:
-        final_eqp_id = lookup_id_by_id_or_name("EQUIPMENT", "EQP_ID", "EQP_NAME", eqp_id, eqp_name)
-        if final_eqp_id:
-            logger.info(f"[ID 조회] equipment (id={eqp_id}, name={eqp_name}) -> ID '{final_eqp_id}'")
-        else:
-            logger.warning(f"[ID 조회] equipment (id={eqp_id}, name={eqp_name})에 해당하는 ID를 찾을 수 없음")
+    eqp_id, eqp_name = extract_id_from_request(request, 'eqp', request.equipment)
+    final_eqp_id = resolve_entity_id("EQUIPMENT", "EQP_ID", "EQP_NAME", "equipment", eqp_id, eqp_name)
     
     result = IdLookupResponse(
         process_id=final_process_id,
