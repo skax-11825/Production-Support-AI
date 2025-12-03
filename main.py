@@ -228,6 +228,49 @@ def lookup_id_by_name(table: str, id_col: str, name_col: str, search_value: str)
         return None
 
 
+def lookup_id_by_id_or_name(table: str, id_col: str, name_col: str, id_value: Optional[str] = None, name_value: Optional[str] = None) -> Optional[str]:
+    """테이블에서 ID 또는 NAME으로 실제 ID 조회 (OR 조건)"""
+    id_val = clean_request_value(id_value)
+    name_val = clean_request_value(name_value)
+    
+    # 둘 다 없으면 None 반환
+    if not id_val and not name_val:
+        return None
+    
+    try:
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            # WHERE 조건 구성
+            conditions = []
+            params = []
+            param_index = 1
+            
+            if id_val:
+                conditions.append(f"UPPER(TRIM({id_col})) = UPPER(:{param_index})")
+                params.append(id_val.strip())
+                param_index += 1
+            
+            if name_val:
+                conditions.append(f"UPPER(TRIM({name_col})) = UPPER(:{param_index})")
+                params.append(name_val.strip())
+            
+            query = f"""
+                SELECT {id_col} 
+                FROM {table} 
+                WHERE {' OR '.join(conditions)}
+                FETCH FIRST 1 ROWS ONLY
+            """
+            
+            cursor.execute(query, params)
+            row = cursor.fetchone()
+            cursor.close()
+            return row[0] if row else None
+    except Exception as e:
+        logger.error(f"ID/NAME 조회 오류 ({table}): {e}")
+        return None
+
+
 # ============================================================================
 # 데이터베이스 연결 초기화
 # ============================================================================
@@ -281,8 +324,8 @@ async def lookup_ids(request: IdLookupRequest):
     process_id/process_name, model_id/model_name, eqp_id/eqp_name 또는
     Dify 형식(process/model/equipment 객체)으로 ID 조회.
     
-    - ID가 제공되면 그대로 반환
-    - 이름만 제공되면 DB에서 ID 조회 후 반환
+    - ID 또는 NAME을 받으면 DB에서 WHERE OR 조건으로 조회하여 실제 ID 반환
+    - 조회가 안 되면 null 반환
     """
     request_dict = request.model_dump(exclude_none=True)
     logger.info(f"[ID 조회] 요청 수신 - 전체 요청: {json.dumps(request_dict, ensure_ascii=False)}")
@@ -301,17 +344,14 @@ async def lookup_ids(request: IdLookupRequest):
     if not process_name:
         process_name = clean_request_value(request.process_name)
     
-    # Process ID 결정: ID가 있으면 사용, 없으면 이름으로 조회
+    # Process ID 결정: ID 또는 NAME으로 DB 조회
     final_process_id = None
-    if process_id:
-        final_process_id = process_id
-        logger.info(f"[ID 조회] process_id 직접 제공: {process_id}")
-    elif process_name:
-        final_process_id = lookup_id_by_name("PROCESS", "PROCESS_ID", "PROCESS_NAME", process_name)
+    if process_id or process_name:
+        final_process_id = lookup_id_by_id_or_name("PROCESS", "PROCESS_ID", "PROCESS_NAME", process_id, process_name)
         if final_process_id:
-            logger.info(f"[ID 조회] process_name '{process_name}'을(를) ID '{final_process_id}'로 변환")
+            logger.info(f"[ID 조회] process (id={process_id}, name={process_name}) -> ID '{final_process_id}'")
         else:
-            logger.warning(f"[ID 조회] process_name '{process_name}'에 해당하는 ID를 찾을 수 없음")
+            logger.warning(f"[ID 조회] process (id={process_id}, name={process_name})에 해당하는 ID를 찾을 수 없음")
     
     # Model ID 처리
     model_id = None
@@ -327,17 +367,14 @@ async def lookup_ids(request: IdLookupRequest):
     if not model_name:
         model_name = clean_request_value(request.model_name)
     
-    # Model ID 결정
+    # Model ID 결정: ID 또는 NAME으로 DB 조회
     final_model_id = None
-    if model_id:
-        final_model_id = model_id
-        logger.info(f"[ID 조회] model_id 직접 제공: {model_id}")
-    elif model_name:
-        final_model_id = lookup_id_by_name("MODEL", "MODEL_ID", "MODEL_NAME", model_name)
+    if model_id or model_name:
+        final_model_id = lookup_id_by_id_or_name("MODEL", "MODEL_ID", "MODEL_NAME", model_id, model_name)
         if final_model_id:
-            logger.info(f"[ID 조회] model_name '{model_name}'을(를) ID '{final_model_id}'로 변환")
+            logger.info(f"[ID 조회] model (id={model_id}, name={model_name}) -> ID '{final_model_id}'")
         else:
-            logger.warning(f"[ID 조회] model_name '{model_name}'에 해당하는 ID를 찾을 수 없음")
+            logger.warning(f"[ID 조회] model (id={model_id}, name={model_name})에 해당하는 ID를 찾을 수 없음")
     
     # Equipment ID 처리
     eqp_id = None
@@ -353,17 +390,14 @@ async def lookup_ids(request: IdLookupRequest):
     if not eqp_name:
         eqp_name = clean_request_value(request.eqp_name)
     
-    # Equipment ID 결정
+    # Equipment ID 결정: ID 또는 NAME으로 DB 조회
     final_eqp_id = None
-    if eqp_id:
-        final_eqp_id = eqp_id
-        logger.info(f"[ID 조회] eqp_id 직접 제공: {eqp_id}")
-    elif eqp_name:
-        final_eqp_id = lookup_id_by_name("EQUIPMENT", "EQP_ID", "EQP_NAME", eqp_name)
+    if eqp_id or eqp_name:
+        final_eqp_id = lookup_id_by_id_or_name("EQUIPMENT", "EQP_ID", "EQP_NAME", eqp_id, eqp_name)
         if final_eqp_id:
-            logger.info(f"[ID 조회] eqp_name '{eqp_name}'을(를) ID '{final_eqp_id}'로 변환")
+            logger.info(f"[ID 조회] equipment (id={eqp_id}, name={eqp_name}) -> ID '{final_eqp_id}'")
         else:
-            logger.warning(f"[ID 조회] eqp_name '{eqp_name}'에 해당하는 ID를 찾을 수 없음")
+            logger.warning(f"[ID 조회] equipment (id={eqp_id}, name={eqp_name})에 해당하는 ID를 찾을 수 없음")
     
     result = IdLookupResponse(
         process_id=final_process_id,
