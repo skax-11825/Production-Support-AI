@@ -182,6 +182,16 @@ def format_date_for_db(d: Optional[date]) -> Optional[str]:
     return d.strftime('%Y-%m-%d') if d else None
 
 
+def clean_request_value(value: Optional[str]) -> Optional[str]:
+    """요청 값 정리: None, 빈 문자열, 'null' 문자열 처리"""
+    if value is None:
+        return None
+    str_val = str(value).strip()
+    if not str_val or str_val.lower() == 'null':
+        return None
+    return str_val
+
+
 def get_sql_template(filename: str) -> str:
     """SQL 템플릿 파일 읽기"""
     template_path = Path(__file__).parent / "sql_templates" / filename
@@ -283,13 +293,13 @@ async def lookup_ids(request: IdLookupRequest):
     
     # Dify 형식: process 객체
     if request.process:
-        process_id = request.process.id
-        process_name = request.process.name
+        process_id = clean_request_value(request.process.id)
+        process_name = clean_request_value(request.process.name)
     # 단순 형식: 직접 필드
     if not process_id:
-        process_id = request.process_id
+        process_id = clean_request_value(request.process_id)
     if not process_name:
-        process_name = request.process_name
+        process_name = clean_request_value(request.process_name)
     
     # Process ID 결정: ID가 있으면 사용, 없으면 이름으로 조회
     final_process_id = None
@@ -309,13 +319,13 @@ async def lookup_ids(request: IdLookupRequest):
     
     # Dify 형식: model 객체
     if request.model:
-        model_id = request.model.id
-        model_name = request.model.name
+        model_id = clean_request_value(request.model.id)
+        model_name = clean_request_value(request.model.name)
     # 단순 형식: 직접 필드
     if not model_id:
-        model_id = request.model_id
+        model_id = clean_request_value(request.model_id)
     if not model_name:
-        model_name = request.model_name
+        model_name = clean_request_value(request.model_name)
     
     # Model ID 결정
     final_model_id = None
@@ -335,13 +345,13 @@ async def lookup_ids(request: IdLookupRequest):
     
     # Dify 형식: equipment 객체
     if request.equipment:
-        eqp_id = request.equipment.id
-        eqp_name = request.equipment.name
+        eqp_id = clean_request_value(request.equipment.id)
+        eqp_name = clean_request_value(request.equipment.name)
     # 단순 형식: 직접 필드
     if not eqp_id:
-        eqp_id = request.eqp_id
+        eqp_id = clean_request_value(request.eqp_id)
     if not eqp_name:
-        eqp_name = request.eqp_name
+        eqp_name = clean_request_value(request.eqp_name)
     
     # Equipment ID 결정
     final_eqp_id = None
@@ -377,7 +387,13 @@ async def get_error_code_stats(request: ErrorCodeStatsRequest):
     if not db.test_connection():
         raise HTTPException(status_code=503, detail="데이터베이스에 연결할 수 없습니다.")
     
-    logger.info(f"[Error Code 통계] 요청 수신 - process_id: {request.process_id}, model_id: {request.model_id}, eqp_id: {request.eqp_id}, error_code: {request.error_code}, group_by: {request.group_by}")
+    # 요청 값 정리
+    cleaned_process_id = clean_request_value(request.process_id)
+    cleaned_model_id = clean_request_value(request.model_id)
+    cleaned_eqp_id = clean_request_value(request.eqp_id)
+    cleaned_error_code = clean_request_value(request.error_code)
+    
+    logger.info(f"[Error Code 통계] 요청 수신 - process_id: {cleaned_process_id}, model_id: {cleaned_model_id}, eqp_id: {cleaned_eqp_id}, error_code: {cleaned_error_code}, group_by: {request.group_by}")
     
     try:
         # Period 처리
@@ -424,10 +440,10 @@ async def get_error_code_stats(request: ErrorCodeStatsRequest):
             cursor.execute(sql, {
                 "start_date": format_date_for_db(request.start_date),
                 "end_date": format_date_for_db(request.end_date),
-                "process_id": request.process_id,
-                "model_id": request.model_id,
-                "eqp_id": request.eqp_id,
-                "error_code": request.error_code
+                "process_id": cleaned_process_id,
+                "model_id": cleaned_model_id,
+                "eqp_id": cleaned_eqp_id,
+                "error_code": cleaned_error_code
             })
             
             rows = cursor.fetchall()
@@ -472,7 +488,12 @@ async def get_pm_history(request: PMHistoryRequest):
     if not db.test_connection():
         raise HTTPException(status_code=503, detail="데이터베이스에 연결할 수 없습니다.")
     
-    logger.info(f"[PM 이력] 요청 수신 - process_id: {request.process_id}, eqp_id: {request.eqp_id}, operator: {request.operator}, start_date: {request.start_date}, end_date: {request.end_date}, limit: {request.limit}")
+    # 요청 값 정리
+    cleaned_process_id = clean_request_value(request.process_id)
+    cleaned_eqp_id = clean_request_value(request.eqp_id)
+    cleaned_operator = clean_request_value(request.operator)
+    
+    logger.info(f"[PM 이력] 요청 수신 - process_id: {cleaned_process_id}, eqp_id: {cleaned_eqp_id}, operator: {cleaned_operator}, start_date: {request.start_date}, end_date: {request.end_date}, limit: {request.limit}")
     
     # SQL 템플릿 파일 읽기
     sql = get_sql_template("pm_history.sql")
@@ -483,9 +504,9 @@ async def get_pm_history(request: PMHistoryRequest):
             cursor.execute(sql, {
                 "start_date": format_date_for_db(request.start_date),
                 "end_date": format_date_for_db(request.end_date),
-                "process_id": request.process_id,
-                "eqp_id": request.eqp_id,
-                "operator": request.operator,
+                "process_id": cleaned_process_id,
+                "eqp_id": cleaned_eqp_id,
+                "operator": cleaned_operator,
                 "limit_val": request.limit or 10
             })
             
@@ -522,7 +543,12 @@ async def search_inform_notes(request: SearchRequest):
     if not db.test_connection():
         raise HTTPException(status_code=503, detail="데이터베이스에 연결할 수 없습니다.")
     
-    logger.info(f"[상세 검색] 요청 수신 - process_id: {request.process_id}, eqp_id: {request.eqp_id}, operator: {request.operator}, start_date: {request.start_date}, end_date: {request.end_date}, limit: {request.limit}")
+    # 요청 값 정리
+    cleaned_process_id = clean_request_value(request.process_id)
+    cleaned_eqp_id = clean_request_value(request.eqp_id)
+    cleaned_operator = clean_request_value(request.operator)
+    
+    logger.info(f"[상세 검색] 요청 수신 - process_id: {cleaned_process_id}, eqp_id: {cleaned_eqp_id}, operator: {cleaned_operator}, start_date: {request.start_date}, end_date: {request.end_date}, limit: {request.limit}")
     
     # SQL 템플릿 파일 읽기
     sql = get_sql_template("search_inform_notes.sql")
@@ -533,9 +559,9 @@ async def search_inform_notes(request: SearchRequest):
             cursor.execute(sql, {
                 "start_date": format_date_for_db(request.start_date),
                 "end_date": format_date_for_db(request.end_date),
-                "process_id": request.process_id,
-                "eqp_id": request.eqp_id,
-                "operator": request.operator,
+                "process_id": cleaned_process_id,
+                "eqp_id": cleaned_eqp_id,
+                "operator": cleaned_operator,
                 "status_id": request.status_id,
                 "limit_val": request.limit or 20
             })
