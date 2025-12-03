@@ -67,14 +67,7 @@ class IdLookupRequest(BaseModel):
     process: Optional[ProcessInfo] = None
     model: Optional[ModelInfo] = None
     equipment: Optional[EquipmentInfo] = None
-    
-    # 단순 형식: 직접 필드
-    process_id: Optional[str] = None
-    process_name: Optional[str] = None
-    model_id: Optional[str] = None
-    model_name: Optional[str] = None
-    eqp_id: Optional[str] = None
-    eqp_name: Optional[str] = None
+
 
 
 class IdLookupResponse(BaseModel):
