@@ -9,7 +9,7 @@
 """
 from pathlib import Path
 import logging
-from typing import Dict, Any, List
+from typing import Any
 import math
 import pandas as pd
 from database import db
@@ -20,7 +20,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-DATA_FILE = Path(__file__).parent / 'normalized_data_preprocessed.xlsx'
+DATA_FILE = Path(__file__).parent / 'normalized_data_preprocessed_251203.xlsx'
 
 # 레퍼런스 테이블 설정
 # 테이블 이름은 엑셀 시트 이름을 대문자로 변환한 것과 정확히 일치합니다

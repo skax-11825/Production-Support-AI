@@ -72,14 +72,17 @@ DIFY_USER_ID=oracle-agent-user
 
 5. **서버 실행**
 ```powershell
-# 방법 1: 직접 실행
+# 방법 1: 통합 시작 스크립트 (권장) - 메뉴 방식
+start.bat
+
+# 방법 2: 직접 실행
 python main.py
 
-# 방법 2: start_server.py 실행 (더블클릭 가능)
+# 방법 3: Python 스크립트 실행 (더블클릭 가능)
 python start_server.py
 
-# 방법 3: PowerShell 스크립트 (있다면)
-.\start_server.ps1
+# 방법 4: Ngrok만 실행
+start_ngrok.bat
 ```
 
 #### macOS/Linux
@@ -113,16 +116,20 @@ DIFY_USER_ID=oracle-agent-user
 
 5. **서버 실행**
 ```bash
-# 방법 1: 직접 실행
+# 방법 1: 통합 시작 스크립트 (권장) - 메뉴 방식
+chmod +x start.sh
+./start.sh
+
+# 방법 2: 직접 실행
 python3 main.py
 
-# 방법 2: 셸 스크립트 실행
+# 방법 3: 간단한 서버 시작 스크립트
 chmod +x start_server.sh
 ./start_server.sh
 
-# 방법 3: 서버 + ngrok 통합 실행
-chmod +x start_all.sh
-./start_all.sh
+# 방법 4: Ngrok만 실행
+chmod +x start_ngrok.sh
+./start_ngrok.sh
 ```
 
 ## 환경 변수 설정
@@ -212,7 +219,6 @@ Agent/
 ├── main.py                 # FastAPI 메인 애플리케이션
 ├── database.py             # Oracle DB 연결 관리
 ├── config.py               # 설정 관리
-├── dify_client.py          # Dify AI 클라이언트
 ├── recreate_database.py    # DB 초기화 스크립트
 ├── load_data.py            # 데이터 로딩 스크립트
 ├── utils.py                # 유틸리티 함수
@@ -220,7 +226,9 @@ Agent/
 ├── Dockerfile              # Docker 이미지 정의
 ├── docker-compose.yml      # Docker Compose 설정
 ├── create_*.sql            # DB 스키마 SQL 파일
-└── start_*.sh/.py          # 서버 시작 스크립트
+├── start.sh / start.bat    # 통합 시작 스크립트 (메뉴 방식, 권장)
+├── start_server.sh/.py     # 간단한 서버 시작 스크립트
+└── start_ngrok.sh/.bat     # Ngrok 터널 시작 스크립트
 ```
 
 ### 로컬 개발 환경 설정

@@ -69,7 +69,6 @@ class IdLookupRequest(BaseModel):
     equipment: Optional[EquipmentInfo] = None
 
 
-
 class IdLookupResponse(BaseModel):
     """ID 조회 응답 모델"""
     process_id: Optional[str] = None
@@ -206,31 +205,58 @@ def lookup_id_by_id_or_name(table: str, id_col: str, name_col: str, id_value: Op
     if not id_val and not name_val:
         return None
     
+    # SQL Injection 방지: 테이블/컬럼명 화이트리스트 검증
+    ALLOWED_TABLES = {'PROCESS', 'MODEL', 'EQUIPMENT'}
+    ALLOWED_COLUMNS = {
+        'PROCESS': {'PROCESS_ID', 'PROCESS_NAME'},
+        'MODEL': {'MODEL_ID', 'MODEL_NAME'},
+        'EQUIPMENT': {'EQP_ID', 'EQP_NAME'}
+    }
+    
+    table_upper = table.upper()
+    id_col_upper = id_col.upper()
+    name_col_upper = name_col.upper()
+    
+    if table_upper not in ALLOWED_TABLES:
+        logger.error(f"허용되지 않은 테이블: {table}")
+        return None
+    
+    if id_col_upper not in ALLOWED_COLUMNS[table_upper]:
+        logger.error(f"허용되지 않은 컬럼: {id_col} (테이블: {table})")
+        return None
+    
+    if name_col_upper not in ALLOWED_COLUMNS[table_upper]:
+        logger.error(f"허용되지 않은 컬럼: {name_col} (테이블: {table})")
+        return None
+    
     try:
+        # SQL 템플릿 파일 읽기
+        sql_template = get_sql_template("lookup_id.sql")
+        
+        # WHERE 조건 구성
+        conditions = []
+        params = []
+        param_index = 1
+        
+        if id_val:
+            conditions.append(f"UPPER(TRIM({id_col_upper})) = UPPER(:{param_index})")
+            params.append(id_val.strip())
+            param_index += 1
+        
+        if name_val:
+            conditions.append(f"UPPER(TRIM({name_col_upper})) = UPPER(:{param_index})")
+            params.append(name_val.strip())
+        
+        # SQL 템플릿에 동적 값 주입 (화이트리스트 검증 완료)
+        query = sql_template.format(
+            id_col=id_col_upper,
+            name_col=name_col_upper,
+            table=table_upper,
+            where_conditions=' OR '.join(conditions)
+        )
+        
         with db.get_connection() as conn:
             cursor = conn.cursor()
-            
-            # WHERE 조건 구성
-            conditions = []
-            params = []
-            param_index = 1
-            
-            if id_val:
-                conditions.append(f"UPPER(TRIM({id_col})) = UPPER(:{param_index})")
-                params.append(id_val.strip())
-                param_index += 1
-            
-            if name_val:
-                conditions.append(f"UPPER(TRIM({name_col})) = UPPER(:{param_index})")
-                params.append(name_val.strip())
-            
-            query = f"""
-                SELECT {id_col} 
-                FROM {table} 
-                WHERE {' OR '.join(conditions)}
-                FETCH FIRST 1 ROWS ONLY
-            """
-            
             cursor.execute(query, params)
             row = cursor.fetchone()
             cursor.close()

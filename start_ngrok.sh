@@ -1,33 +1,31 @@
 #!/bin/bash
+# Ngrok 터널 시작 스크립트 (macOS/Linux)
 
-# ngrok 자동 실행 스크립트
+cd "$(dirname "$0")"
 
-# PATH 설정
-export PATH="$HOME/bin:$PATH"
+PORT=${1:-8000}
 
-# ngrok 인증 키 설정 (이미 설정되어 있어야 함)
-# ngrok config add-authtoken YOUR_AUTH_TOKEN
+echo "============================================================"
+echo "  Ngrok 터널 시작"
+echo "============================================================"
+echo ""
 
-# 서버가 실행 중인지 확인 (최대 30초 대기)
-for i in {1..30}; do
-    if lsof -ti:8000 > /dev/null 2>&1; then
-        break
-    fi
-    sleep 1
-done
-
-# 서버가 실행 중이 아니면 종료
-if ! lsof -ti:8000 > /dev/null 2>&1; then
-    echo "$(date): 서버가 실행 중이 아닙니다. ngrok을 시작할 수 없습니다." >> /tmp/ngrok.log
+# Ngrok 확인
+if ! command -v ngrok &> /dev/null; then
+    echo "❌ Ngrok을 찾을 수 없습니다."
+    echo "  Ngrok을 설치하고 PATH에 추가하세요."
+    echo "  다운로드: https://ngrok.com/download"
+    echo "  또는: brew install ngrok/ngrok/ngrok"
     exit 1
 fi
 
-# 기존 ngrok 프로세스 종료
-pkill -f "ngrok http 8000" 2>/dev/null
-sleep 2
+echo "Ngrok 터널 시작 중 (포트 $PORT)..."
+echo "  로컬 서버가 http://localhost:$PORT 에서 실행 중이어야 합니다."
+echo ""
+echo "Ngrok 대시보드: http://localhost:4040"
+echo "종료하려면 Ctrl+C를 누르세요."
+echo "============================================================"
+echo ""
 
-# ngrok 실행 (인증 키는 이미 설정되어 있음)
-echo "$(date): ngrok을 시작합니다 (포트 8000)." >> /tmp/ngrok.log
-export PATH="$HOME/bin:$PATH"
-/Users/jeonghoon/bin/ngrok http 8000 --log=stdout >> /tmp/ngrok.log 2>&1
+ngrok http $PORT
 
