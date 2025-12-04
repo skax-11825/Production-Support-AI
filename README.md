@@ -9,6 +9,7 @@ Oracle Database와 연동된 반도체 공정 데이터 조회 및 통계 API �
 - **상세 내역 검색**: 조치 내역 상세 정보 검색
 - **ID 조회**: 공정/모델/장비 ID 조회 (ID 또는 NAME으로 검색)
 - **Dify AI 연동**: 자연어 질의-응답 지원 (선택사항)
+- **웹 UI**: Dify와 연동된 사용자 친화적인 웹 인터페이스 (새로 추가! 🎉)
 
 ---
 
@@ -52,6 +53,13 @@ Agent/
 │   ├── requirements.txt           # Python 패키지 의존성
 │   └── build.spec                 # PyInstaller 빌드 설정
 │
+├── 📁 프론트엔드 UI (새로 추가!)
+│   ├── index.html                 # 메인 HTML 파일
+│   ├── styles.css                 # 스타일시트
+│   ├── app.js                     # JavaScript 애플리케이션
+│   ├── README.md                  # 프론트엔드 사용 가이드
+│   └── DIFY_SETUP.md              # Dify 연동 설정 가이드
+│
 └── 📁 데이터 파일
     └── normalized_data_preprocessed_251203.xlsx  # 데이터 적재용 Excel 파일
 ```
@@ -60,9 +68,15 @@ Agent/
 
 ```
 ┌─────────────────┐
-│   Dify AI       │  ← 자연어 질의 입력
+│   웹 UI         │  ← 사용자 인터페이스 (새로 추가!)
+│  (frontend/)    │
 └────────┬────────┘
-         │ HTTP Request
+         │ HTTP Request (Dify Chat API)
+         ▼
+┌─────────────────┐
+│   Dify AI       │  ← 자연어 질의 처리 및 워크플로우
+└────────┬────────┘
+         │ HTTP Request (Tool 호출)
          ▼
 ┌─────────────────┐
 │  FastAPI Server │  ← REST API 엔드포인트
@@ -255,6 +269,53 @@ curl http://localhost:8000/health
 # API 문서 확인
 # 브라우저에서 http://localhost:8000/docs 접속
 ```
+
+### 6단계: 웹 UI 사용 (새로 추가! 🎉)
+
+프론트엔드 UI를 사용하여 Dify와 연동된 질의-응답 시스템을 사용할 수 있습니다.
+
+#### 방법 1: 직접 파일 열기 (가장 간단)
+
+```bash
+# 브라우저에서 직접 열기
+open frontend/index.html  # macOS
+# 또는
+xdg-open frontend/index.html  # Linux
+# 또는 Windows에서 파일 탐색기로 frontend/index.html 더블클릭
+```
+
+#### 방법 2: 로컬 서버 실행 (권장)
+
+CORS 문제를 피하기 위해 로컬 서버를 사용하는 것을 권장합니다:
+
+```bash
+# Python HTTP 서버
+cd frontend
+python3 -m http.server 8080
+
+# 또는 Node.js HTTP 서버
+npx http-server -p 8080
+```
+
+그 다음 브라우저에서 `http://localhost:8080` 접속
+
+#### 웹 UI 사용 방법
+
+1. **Dify API Key 설정**
+   - 사이드바에서 Dify API Key 입력
+   - "설정 저장" 클릭
+
+2. **질문 입력**
+   - 채팅창에 자연어로 질문 입력
+   - 예: "ETCH 공정의 에러 코드 통계를 보여줘"
+
+3. **결과 확인**
+   - Dify가 분석하여 데이터를 조회
+   - 결과가 채팅창에 표시됨
+
+자세한 사용 방법은 `frontend/README.md`를 참조하세요.
+
+**중요**: Dify 워크플로우를 먼저 설정해야 합니다. `frontend/DIFY_SETUP.md`를 참조하세요.
 
 ---
 

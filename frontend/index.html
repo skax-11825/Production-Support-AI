@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inform Note 질의-응답 시스템</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🔍 Inform Note 질의-응답 시스템</h1>
+            <p class="subtitle">Dify AI와 연동된 반도체 공정 데이터 조회 시스템</p>
+        </header>
+
+        <div class="main-content">
+            <!-- 채팅 영역 -->
+            <div class="chat-container">
+                <div class="chat-messages" id="chatMessages">
+                    <div class="message bot-message">
+                        <div class="message-content">
+                            <p>안녕하세요! 반도체 공정 데이터에 대해 질문해주세요.</p>
+                            <p class="message-examples">
+                                예시 질문:<br>
+                                • "ETCH 공정의 에러 코드 통계를 보여줘"<br>
+                                • "최근 PM 이력을 조회해줘"<br>
+                                • "특정 장비의 상세 내역을 검색해줘"
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="chat-input-container">
+                    <div class="input-wrapper">
+                        <input 
+                            type="text" 
+                            id="userInput" 
+                            placeholder="질문을 입력하세요..." 
+                            autocomplete="off"
+                        >
+                        <button id="sendButton" class="send-button">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="22" y1="2" x2="11" y2="13"></line>
+                                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="status-bar" id="statusBar">
+                        <span id="statusText">준비됨</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 사이드바: 설정 및 정보 -->
+            <div class="sidebar">
+                <div class="sidebar-section">
+                    <h3>⚙️ 설정</h3>
+                    <div class="setting-item">
+                        <label for="difyApiBase">Dify API Base URL:</label>
+                        <input 
+                            type="text" 
+                            id="difyApiBase" 
+                            placeholder="https://api.dify.ai/v1"
+                            value="https://api.dify.ai/v1"
+                        >
+                    </div>
+                    <div class="setting-item">
+                        <label for="difyApiKey">Dify API Key:</label>
+                        <input 
+                            type="password" 
+                            id="difyApiKey" 
+                            placeholder="app-xxxxxxxx"
+                        >
+                    </div>
+                    <div class="setting-item">
+                        <label for="apiServerUrl">API 서버 URL:</label>
+                        <input 
+                            type="text" 
+                            id="apiServerUrl" 
+                            placeholder="http://localhost:8000"
+                            value="http://localhost:8000"
+                        >
+                    </div>
+                    <button id="saveSettings" class="save-button">설정 저장</button>
+                </div>
+
+                <div class="sidebar-section">
+                    <h3>📊 시스템 상태</h3>
+                    <div class="status-item">
+                        <span class="status-label">API 서버:</span>
+                        <span id="apiServerStatus" class="status-value">확인 중...</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Dify 연결:</span>
+                        <span id="difyStatus" class="status-value">-</span>
+                    </div>
+                    <button id="checkStatus" class="check-button">상태 확인</button>
+                </div>
+
+                <div class="sidebar-section">
+                    <h3>📖 사용 가이드</h3>
+                    <div class="guide-content">
+                        <p><strong>1. 설정</strong><br>
+                        Dify API Key를 입력하고 저장하세요.</p>
+                        <p><strong>2. 질문</strong><br>
+                        자연어로 질문을 입력하면 Dify가 분석하여 데이터를 조회합니다.</p>
+                        <p><strong>3. 결과</strong><br>
+                        조회된 데이터가 채팅창에 표시됩니다.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
+

@@ -42,3 +42,7 @@ build/
 dist/
 *.egg-info/
 
+ai-agent-ui/node_modules/
+ai-agent-ui/.next/
+ai-agent-ui/.env.local
+ai-agent-ui/package-lock.json
