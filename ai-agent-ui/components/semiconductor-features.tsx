@@ -36,9 +36,9 @@ export function SystemWorkflow() {
   return (
     <section className="container mx-auto px-6 py-32">
       <div className="mb-16 text-center">
-        <h2 className="mb-4 text-4xl font-semibold tracking-tight sm:text-5xl">Simplified System Workflow</h2>
+        <h2 className="mb-4 text-4xl font-semibold tracking-tight sm:text-5xl">구조화된 Workflow</h2>
         <p className="mx-auto max-w-2xl text-balance text-lg leading-relaxed text-muted-foreground">
-          Our AI platform seamlessly integrates data, processing, intelligence, and human expertise.
+          DB 서버, MCP 서버, LLM, 엔지니어를 통합 관리하는 구조화된 Workflow를 제공합니다.
         </p>
       </div>
 

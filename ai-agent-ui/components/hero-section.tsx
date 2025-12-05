@@ -27,21 +27,17 @@ export function HeroSection() {
           Production Support AI
         </h1>
         <p className="mb-6 text-xl font-medium text-muted-foreground/80 sm:text-2xl animate-fade-in-up animation-delay-250">
-          Agentic AI Dev Part
+          Agentic AI Dev Team
         </p>
 
         <p className="mx-auto mb-12 max-w-2xl text-balance text-lg leading-relaxed text-muted-foreground sm:text-xl animate-fade-in-up animation-delay-300">
-          Intelligent production management and error resolution powered by advanced AI agents. Built for SK Group with
-          seamless Maxis and Dify integration.
+          LLM 기반 AI Agent가 제조 솔루션 플랫폼을 제공합니다.
         </p>
 
-        {/* CTA Buttons */}
-        <div className="flex flex-col items-center justify-center gap-4 sm:flex-row animate-fade-in-up animation-delay-400">
+        {/* CTA Button */}
+        <div className="flex justify-center animate-fade-in-up animation-delay-400">
           <Button size="lg" className="rounded-full px-8 text-base" onClick={scrollToAgents}>
-            Direct to Agents
-          </Button>
-          <Button size="lg" variant="outline" className="rounded-full px-8 text-base bg-transparent">
-            Watch Demo
+            Agent로 이동
           </Button>
         </div>
 

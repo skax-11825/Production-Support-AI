@@ -31,10 +31,9 @@ export function AgentNavigation() {
     <section id="agents" className="border-t border-border/40 bg-secondary/30 py-32">
       <div className="container mx-auto px-6">
         <div className="mb-16 text-center">
-          <h2 className="mb-4 text-4xl font-semibold tracking-tight sm:text-5xl">Choose Your AI Agent</h2>
+          <h2 className="mb-4 text-4xl font-semibold tracking-tight sm:text-5xl">AI Agent 선택</h2>
           <p className="mx-auto max-w-2xl text-balance text-lg leading-relaxed text-muted-foreground">
-            Select an AI agent to assist with your production needs. Each agent is specialized for specific
-            manufacturing challenges.
+            필요한 AI Agent를 선택하세요. 각 Agent는 특정 제조 과정에 적합하게 설계되었습니다.
           </p>
         </div>
 
