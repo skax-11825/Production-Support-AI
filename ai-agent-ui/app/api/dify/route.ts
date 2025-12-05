@@ -25,33 +25,39 @@ export async function POST(request: NextRequest) {
     }
 
     // API Key 검증 및 로깅 (보안상 전체는 로깅하지 않음)
-    const trimmedApiKey = (apiKey || "").trim()
-    console.log("[Dify Proxy] 요청 URL:", url)
-    console.log("[Dify Proxy] API Key 길이:", trimmedApiKey.length)
-    console.log("[Dify Proxy] API Key 시작:", trimmedApiKey.length > 0 ? trimmedApiKey.substring(0, Math.min(10, trimmedApiKey.length)) + "..." : "EMPTY")
+    // 모든 종류의 공백 문자 제거 (공백, 탭, 줄바꿈 등)
+    const rawApiKey = (apiKey || "").toString()
+    const trimmedApiKey = rawApiKey.trim()
+    const cleanApiKey = trimmedApiKey.replace(/\s+/g, "") // 모든 공백 제거
     
-    if (!trimmedApiKey) {
+    console.log("[Dify Proxy] 요청 URL:", url)
+    console.log("[Dify Proxy] 원본 API Key 길이:", rawApiKey.length)
+    console.log("[Dify Proxy] 정리 후 API Key 길이:", cleanApiKey.length)
+    console.log("[Dify Proxy] API Key 시작:", cleanApiKey.length > 0 ? cleanApiKey.substring(0, Math.min(10, cleanApiKey.length)) + "..." : "EMPTY")
+    console.log("[Dify Proxy] API Key 끝:", cleanApiKey.length > 10 ? "..." + cleanApiKey.substring(cleanApiKey.length - 5) : cleanApiKey)
+    
+    if (!trimmedApiKey || !cleanApiKey) {
       console.error("[Dify Proxy] API Key가 비어있습니다.")
       return NextResponse.json(
         { error: "API Key가 비어있습니다. Dify API Key를 입력하세요." },
-        { status: 400 }
+        { status: 400, headers: corsHeaders }
+      )
+    }
+
+    // API Key 형식 검증 (일반적으로 app- 또는 sk-로 시작)
+    if (cleanApiKey.length < 10) {
+      console.error("[Dify Proxy] API Key가 너무 짧습니다:", cleanApiKey.length)
+      return NextResponse.json(
+        { error: "API Key가 올바르지 않습니다. Dify에서 발급받은 API Key를 확인하세요." },
+        { status: 400, headers: corsHeaders }
       )
     }
 
     // Authorization 헤더 생성 및 검증
-    // API Key에 특수문자가 있는지 확인하고 인코딩
-    const cleanApiKey = trimmedApiKey.replace(/\s+/g, "") // 모든 공백 제거
-    if (!cleanApiKey) {
-      console.error("[Dify Proxy] API Key가 공백만 있습니다.")
-      return NextResponse.json(
-        { error: "API Key가 올바르지 않습니다. 공백 없이 입력하세요." },
-        { status: 400, headers: corsHeaders }
-      )
-    }
-    
+    // Dify API는 Bearer 토큰 형식을 사용
     const authHeader = `Bearer ${cleanApiKey}`
-    console.log("[Dify Proxy] Authorization 헤더 생성됨:", authHeader.substring(0, 25) + "...")
-    console.log("[Dify Proxy] API Key 정리 후 길이:", cleanApiKey.length)
+    console.log("[Dify Proxy] Authorization 헤더 생성됨 (처음 30자):", authHeader.substring(0, 30) + "...")
+    console.log("[Dify Proxy] Authorization 헤더 전체 길이:", authHeader.length)
     
     // Authorization 헤더 형식 검증
     if (!authHeader.startsWith("Bearer ") || authHeader.length < 15) {
@@ -62,26 +68,32 @@ export async function POST(request: NextRequest) {
       )
     }
     
-    // 사용자가 입력한 URL을 그대로 사용 (수정하지 않음)
+    // URL 정리 및 검증
+    const cleanUrl = url.trim()
+    if (!cleanUrl || !cleanUrl.startsWith("http")) {
+      console.error("[Dify Proxy] URL이 올바르지 않습니다:", cleanUrl)
+      return NextResponse.json(
+        { error: "Dify API Base URL이 올바르지 않습니다. http:// 또는 https://로 시작하는 URL을 입력하세요." },
+        { status: 400, headers: corsHeaders }
+      )
+    }
 
     // Dify API 호출 (서버 사이드에서 실행되므로 CORS 문제 없음)
-    // 브라우저처럼 보이도록 User-Agent 추가 (일부 서버가 User-Agent를 체크할 수 있음)
+    // Dify API는 표준 Bearer 토큰 인증을 사용
     const requestHeaders: Record<string, string> = {
       "Authorization": authHeader,
       "Content-Type": "application/json",
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
       "Accept": "application/json",
     }
     
-    console.log("[Dify Proxy] 요청 헤더 (요약):", {
-      "Authorization": authHeader.substring(0, 25) + "...",
-      "Content-Type": requestHeaders["Content-Type"],
-      "User-Agent": requestHeaders["User-Agent"].substring(0, 50) + "...",
-      "Accept": requestHeaders["Accept"],
-    })
-    console.log("[Dify Proxy] Authorization 헤더 전체 길이:", authHeader.length)
+    console.log("[Dify Proxy] 최종 요청 정보:")
+    console.log("  - URL:", cleanUrl)
+    console.log("  - Authorization 헤더 (처음 30자):", authHeader.substring(0, 30) + "...")
+    console.log("  - Authorization 헤더 전체 길이:", authHeader.length)
+    console.log("  - Content-Type:", requestHeaders["Content-Type"])
+    console.log("  - Payload 크기:", JSON.stringify(payload).length, "bytes")
     
-    const response = await fetch(url, {
+    const response = await fetch(cleanUrl, {
       method: "POST",
       headers: requestHeaders,
       body: JSON.stringify(payload),
@@ -128,28 +140,34 @@ export async function POST(request: NextRequest) {
         // Dify API 특정 에러 메시지 처리
         if (response.status === 401) {
           // Dify 서버의 실제 에러 메시지 확인
-          const difyErrorMsg = (errorData.message || errorData.error || "").toLowerCase()
-          console.error("[Dify Proxy] 401 에러 상세:", difyErrorMsg)
+          const difyErrorMsg = (errorData.message || errorData.error || errorData.code || "").toLowerCase()
+          const fullErrorMsg = errorData.message || errorData.error || JSON.stringify(errorData)
           
-          if (difyErrorMsg.includes("authorization header") || difyErrorMsg.includes("bearer")) {
-            errorMessage = "인증 실패: Authorization 헤더가 올바르지 않습니다. API Key를 확인하세요."
-          } else if (difyErrorMsg.includes("invalid") || difyErrorMsg.includes("expired")) {
-            errorMessage = "인증 실패: API Key가 올바르지 않거나 만료되었습니다. Dify에서 새로운 API Key를 발급받으세요."
-          } else if (difyErrorMsg.includes("ip") || difyErrorMsg.includes("domain") || difyErrorMsg.includes("whitelist")) {
-            errorMessage = "인증 실패: Dify 서버가 특정 IP나 도메인만 허용하도록 설정되어 있습니다. Dify 서버 관리자에게 Vercel 서버 IP를 허용 목록에 추가해달라고 요청하세요."
+          console.error("[Dify Proxy] 401 에러 상세:")
+          console.error("  - 에러 메시지:", fullErrorMsg)
+          console.error("  - 에러 코드:", errorData.code || "N/A")
+          console.error("  - 사용된 URL:", cleanUrl)
+          console.error("  - Authorization 헤더 (처음 30자):", authHeader.substring(0, 30) + "...")
+          console.error("  - API Key 길이:", cleanApiKey.length)
+          
+          if (difyErrorMsg.includes("authorization") || difyErrorMsg.includes("bearer") || difyErrorMsg.includes("token")) {
+            errorMessage = "인증 실패: Authorization 헤더가 올바르지 않습니다. API Key를 확인하세요.\n\n해결 방법:\n1. Dify에서 새로운 API Key를 발급받으세요\n2. API Key에 공백이나 특수문자가 없는지 확인하세요\n3. API Key를 복사할 때 앞뒤 공백이 포함되지 않았는지 확인하세요"
+          } else if (difyErrorMsg.includes("invalid") || difyErrorMsg.includes("expired") || difyErrorMsg.includes("unauthorized")) {
+            errorMessage = "인증 실패: API Key가 올바르지 않거나 만료되었습니다.\n\n해결 방법:\n1. Dify에서 새로운 API Key를 발급받으세요\n2. API Key가 활성화되어 있는지 확인하세요\n3. API Key가 해당 애플리케이션에 연결되어 있는지 확인하세요"
+          } else if (difyErrorMsg.includes("ip") || difyErrorMsg.includes("domain") || difyErrorMsg.includes("whitelist") || difyErrorMsg.includes("forbidden")) {
+            errorMessage = "인증 실패: Dify 서버가 특정 IP나 도메인만 허용하도록 설정되어 있습니다.\n\n해결 방법:\n1. Dify 서버 관리자에게 현재 서버 IP를 허용 목록에 추가해달라고 요청하세요\n2. 또는 Dify 서버의 IP 화이트리스트 설정을 확인하세요"
           } else {
-            errorMessage = `인증 실패: ${errorData.message || errorData.error || "API Key가 올바르지 않거나 만료되었습니다. Dify에서 새로운 API Key를 발급받으세요."}`
+            errorMessage = `인증 실패: ${fullErrorMsg}\n\n해결 방법:\n1. Dify API Base URL이 올바른지 확인하세요 (예: http://your-server.com/v1)\n2. API Key가 올바른지 확인하세요\n3. Dify 서버가 실행 중인지 확인하세요`
           }
         } else if (response.status === 403) {
-          errorMessage = "권한 없음: 이 API Key로는 해당 작업을 수행할 권한이 없습니다. 또는 Dify 서버가 특정 IP/도메인만 허용하도록 설정되어 있을 수 있습니다."
+          errorMessage = "권한 없음: 이 API Key로는 해당 작업을 수행할 권한이 없습니다.\n\n해결 방법:\n1. API Key에 필요한 권한이 있는지 확인하세요\n2. Dify 서버가 특정 IP/도메인만 허용하도록 설정되어 있을 수 있습니다"
         } else if (response.status === 404) {
-          errorMessage = "API 엔드포인트를 찾을 수 없습니다. Dify API Base URL이 올바른지 확인하세요. (예: https://your-dify.com/v1)"
+          errorMessage = "API 엔드포인트를 찾을 수 없습니다.\n\n해결 방법:\n1. Dify API Base URL이 올바른지 확인하세요 (예: http://your-server.com/v1)\n2. URL 끝에 /v1이 포함되어 있는지 확인하세요\n3. 엔드포인트 경로가 올바른지 확인하세요 (/chat-messages)"
         } else if (response.status === 500) {
-          errorMessage = "Dify 서버 오류: Dify 서버에 문제가 있습니다. 잠시 후 다시 시도하세요."
+          errorMessage = "Dify 서버 오류: Dify 서버에 문제가 있습니다.\n\n해결 방법:\n1. 잠시 후 다시 시도하세요\n2. Dify 서버 로그를 확인하세요\n3. Dify 서버 관리자에게 문의하세요"
         }
         
-        console.error("[Dify Proxy] Dify API 오류:", errorMessage, errorData)
-        console.error("[Dify Proxy] 사용된 Authorization 헤더:", authHeader.substring(0, 30) + "...")
+        console.error("[Dify Proxy] Dify API 오류:", errorMessage)
         return NextResponse.json(
           { error: errorMessage },
           { status: response.status, headers: corsHeaders }

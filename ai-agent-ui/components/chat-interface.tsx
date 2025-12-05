@@ -70,14 +70,20 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
       throw new Error("Dify API 설정이 완료되지 않았습니다. 설정 버튼을 클릭하여 API Key를 입력하세요.")
     }
 
-    // API Key 검증
-    const trimmedApiKey = (config.difyApiKey || "").trim()
-    if (!trimmedApiKey) {
+    // API Key 검증 및 정리
+    // 모든 종류의 공백 문자 제거 (공백, 탭, 줄바꿈 등)
+    const rawApiKey = (config.difyApiKey || "").toString()
+    const trimmedApiKey = rawApiKey.trim()
+    const cleanApiKey = trimmedApiKey.replace(/\s+/g, "") // 모든 공백 제거
+    
+    if (!trimmedApiKey || !cleanApiKey) {
       throw new Error("API Key가 비어있습니다. 설정에서 API Key를 입력하세요.")
     }
 
-    // 사용자가 입력한 URL을 그대로 사용
-    const url = `${config.difyApiBase}/chat-messages`
+    // URL 정리
+    const baseUrl = (config.difyApiBase || "").trim().replace(/\/+$/, "")
+    const url = `${baseUrl}/chat-messages`
+    
     const payload = {
       inputs: {},
       query: message,
@@ -86,7 +92,7 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
       user: "web-ui-user",
     }
 
-    console.log("[Dify API] 요청 시작:", { url, hasKey: !!trimmedApiKey, keyLength: trimmedApiKey.length })
+    console.log("[Dify API] 요청 시작:", { url, hasKey: !!cleanApiKey, keyLength: cleanApiKey.length })
 
     try {
       // 프록시를 통해 요청 (CORS 문제 해결)
@@ -97,7 +103,7 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
         },
         body: JSON.stringify({
           url: url,
-          apiKey: trimmedApiKey, // 공백 제거하여 전달
+          apiKey: cleanApiKey, // 모든 공백 제거된 API Key 전달
           payload: payload,
         }),
       })
