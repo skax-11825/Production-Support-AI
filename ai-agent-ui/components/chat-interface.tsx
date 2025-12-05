@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Send, User, Loader2, Bot } from "lucide-react"
 import { SettingsDialog } from "@/components/settings-dialog"
+import ReactMarkdown from "react-markdown"
+import remarkGfm from "remark-gfm"
 
 type Message = {
   role: "user" | "assistant"
@@ -261,7 +263,15 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
                     : "bg-white dark:bg-slate-800 text-foreground border border-border/50 shadow-sm"
                 }`}
               >
-                <p className="leading-relaxed whitespace-pre-wrap">{message.content}</p>
+                {message.role === "user" ? (
+                  <p className="leading-relaxed whitespace-pre-wrap">{message.content}</p>
+                ) : (
+                  <div className="markdown-content">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {message.content}
+                    </ReactMarkdown>
+                  </div>
+                )}
               </div>
             </div>
           ))}
