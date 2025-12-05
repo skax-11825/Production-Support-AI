@@ -31,7 +31,8 @@ interface SettingsDialogProps {
 }
 
 export function SettingsDialog({ agentType, onConfigChange }: SettingsDialogProps) {
-  const storageKey = `difyConfig_${agentType}`
+  // 에이전트별 localStorage 키 (v2: 기본값 포함 버전)
+  const storageKey = `difyConfig_v2_${agentType}`
   const defaultApiKey = DEFAULT_API_KEYS[agentType]
   
   const [open, setOpen] = useState(false)
