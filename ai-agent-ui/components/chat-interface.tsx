@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -31,7 +31,7 @@ const DEFAULT_NGROK_URL = "https://youlanda-unconciliatory-unmirthfully.ngrok-fr
 // 에이전트별 기본 API Key
 const DEFAULT_API_KEYS: Record<AgentType, string> = {
   "error-lense": "app-hKVB2xN9C5deXeavB9SAfkRo",
-  "state-chase": "app-rzR04Xc0vdXlhXaHN6XXqXPr",
+  "state-chase": "app-XM30CYZpFY9ECH59lH1s1Erg",
 }
 
 export function ChatInterface({ agentType }: ChatInterfaceProps) {
@@ -50,6 +50,10 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [config, setConfig] = useState<DifyConfig | null>(null)
   const [conversationId, setConversationId] = useState<string | null>(null)
+  
+  // 자동 스크롤을 위한 ref
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
 
   // 에이전트별 localStorage 키 (v3: State Chase API 키 변경)
   const storageKey = `difyConfig_v3_${agentType}`
@@ -57,6 +61,11 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
   useEffect(() => {
     loadConfig()
   }, [agentType])
+
+  // 메시지 변경 또는 로딩 시 자동 스크롤
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+  }, [messages, isLoading])
 
   const loadConfig = () => {
     const defaultApiKey = DEFAULT_API_KEYS[agentType]
@@ -227,7 +236,7 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
         </div>
 
         {/* 메시지 영역 */}
-        <div className="flex-1 space-y-6 overflow-y-auto p-6">
+        <div ref={messagesContainerRef} className="flex-1 space-y-6 overflow-y-auto p-6">
           {messages.map((message, index) => (
             <div key={index} className={`flex gap-4 ${message.role === "user" ? "flex-row-reverse" : "flex-row"}`}>
               <div
@@ -273,6 +282,8 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
               </div>
             </div>
           )}
+          {/* 자동 스크롤 타겟 */}
+          <div ref={messagesEndRef} />
         </div>
 
         {/* 입력 영역 */}
