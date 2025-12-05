@@ -133,7 +133,7 @@ export function SettingsDialog({ onConfigChange }: SettingsDialogProps) {
         },
         body: JSON.stringify({
           url: url,
-          apiKey: config.difyApiKey.trim(), // API Key 앞뒤 공백 제거
+          apiKey: config.difyApiKey.trim(), // 공백 제거하여 전달
           payload: {
             inputs: {},
             query: "테스트",

@@ -13,30 +13,43 @@ export async function POST(request: NextRequest) {
     }
 
     // API Key 검증 및 로깅 (보안상 전체는 로깅하지 않음)
-    const trimmedApiKey = apiKey.trim()
+    const trimmedApiKey = (apiKey || "").trim()
     console.log("[Dify Proxy] 요청 URL:", url)
     console.log("[Dify Proxy] API Key 길이:", trimmedApiKey.length)
-    console.log("[Dify Proxy] API Key 시작:", trimmedApiKey.substring(0, 10) + "...")
+    console.log("[Dify Proxy] API Key 시작:", trimmedApiKey.length > 0 ? trimmedApiKey.substring(0, Math.min(10, trimmedApiKey.length)) + "..." : "EMPTY")
     
     if (!trimmedApiKey) {
+      console.error("[Dify Proxy] API Key가 비어있습니다.")
       return NextResponse.json(
-        { error: "API Key가 비어있습니다." },
+        { error: "API Key가 비어있습니다. Dify API Key를 입력하세요." },
         { status: 400 }
       )
     }
 
+    // Authorization 헤더 생성 및 검증
+    const authHeader = `Bearer ${trimmedApiKey}`
+    console.log("[Dify Proxy] Authorization 헤더 생성됨:", authHeader.substring(0, 20) + "...")
+    
     // 사용자가 입력한 URL을 그대로 사용 (수정하지 않음)
 
     // Dify API 호출 (서버 사이드에서 실행되므로 CORS 문제 없음)
     // 브라우저처럼 보이도록 User-Agent 추가 (일부 서버가 User-Agent를 체크할 수 있음)
+    const requestHeaders: HeadersInit = {
+      "Authorization": authHeader,
+      "Content-Type": "application/json",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "Accept": "application/json",
+    }
+    
+    console.log("[Dify Proxy] 요청 헤더:", {
+      "Authorization": authHeader.substring(0, 20) + "...",
+      "Content-Type": requestHeaders["Content-Type"],
+      "User-Agent": requestHeaders["User-Agent"].substring(0, 50) + "...",
+    })
+    
     const response = await fetch(url, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${trimmedApiKey}`,
-        "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "application/json",
-      },
+      headers: requestHeaders,
       body: JSON.stringify(payload),
     })
 
@@ -81,13 +94,17 @@ export async function POST(request: NextRequest) {
         // Dify API 특정 에러 메시지 처리
         if (response.status === 401) {
           // Dify 서버의 실제 에러 메시지 확인
-          const difyErrorMsg = errorData.message || errorData.error || ""
-          if (difyErrorMsg.includes("invalid") || difyErrorMsg.includes("expired")) {
+          const difyErrorMsg = (errorData.message || errorData.error || "").toLowerCase()
+          console.error("[Dify Proxy] 401 에러 상세:", difyErrorMsg)
+          
+          if (difyErrorMsg.includes("authorization header") || difyErrorMsg.includes("bearer")) {
+            errorMessage = "인증 실패: Authorization 헤더가 올바르지 않습니다. API Key를 확인하세요."
+          } else if (difyErrorMsg.includes("invalid") || difyErrorMsg.includes("expired")) {
             errorMessage = "인증 실패: API Key가 올바르지 않거나 만료되었습니다. Dify에서 새로운 API Key를 발급받으세요."
-          } else if (difyErrorMsg.includes("IP") || difyErrorMsg.includes("domain") || difyErrorMsg.includes("whitelist")) {
+          } else if (difyErrorMsg.includes("ip") || difyErrorMsg.includes("domain") || difyErrorMsg.includes("whitelist")) {
             errorMessage = "인증 실패: Dify 서버가 특정 IP나 도메인만 허용하도록 설정되어 있습니다. Dify 서버 관리자에게 Vercel 서버 IP를 허용 목록에 추가해달라고 요청하세요."
           } else {
-            errorMessage = `인증 실패: ${difyErrorMsg || "API Key가 올바르지 않거나 만료되었습니다. Dify에서 새로운 API Key를 발급받으세요."}`
+            errorMessage = `인증 실패: ${errorData.message || errorData.error || "API Key가 올바르지 않거나 만료되었습니다. Dify에서 새로운 API Key를 발급받으세요."}`
           }
         } else if (response.status === 403) {
           errorMessage = "권한 없음: 이 API Key로는 해당 작업을 수행할 권한이 없습니다. 또는 Dify 서버가 특정 IP/도메인만 허용하도록 설정되어 있을 수 있습니다."
