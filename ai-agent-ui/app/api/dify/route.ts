@@ -22,15 +22,32 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify(payload),
     })
 
-    if (!response.ok) {
-      const errorText = await response.text()
+    const responseText = await response.text()
+    
+    // HTML 응답인지 확인 (Ngrok 경고 페이지 또는 에러 페이지)
+    if (responseText.trim().startsWith("<!DOCTYPE") || responseText.trim().startsWith("<html")) {
       return NextResponse.json(
-        { error: errorText },
-        { status: response.status }
+        { error: "Dify 서버에서 HTML 페이지를 반환했습니다. URL이 올바른지 확인하세요." },
+        { status: 500 }
       )
     }
 
-    const data = await response.json()
+    if (!response.ok) {
+      try {
+        const errorData = JSON.parse(responseText)
+        return NextResponse.json(
+          { error: errorData.message || errorData.error || `HTTP ${response.status}: ${response.statusText}` },
+          { status: response.status }
+        )
+      } catch {
+        return NextResponse.json(
+          { error: `HTTP ${response.status}: ${response.statusText}` },
+          { status: response.status }
+        )
+      }
+    }
+
+    const data = JSON.parse(responseText)
     return NextResponse.json(data)
   } catch (error) {
     console.error("[Dify Proxy] 오류:", error)

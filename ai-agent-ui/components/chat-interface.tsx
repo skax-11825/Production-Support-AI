@@ -99,26 +99,34 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
 
       console.log("[Dify API] 응답 상태:", response.status, response.statusText)
 
+      // 응답 본문을 텍스트로 먼저 읽기
+      const responseText = await response.text()
+      
       if (!response.ok) {
-        const errorText = await response.text()
-        console.error("[Dify API] 오류 응답 텍스트:", errorText.substring(0, 200))
-        
-        // HTML 응답인지 확인
-        if (errorText.trim().startsWith("<!DOCTYPE") || errorText.trim().startsWith("<html")) {
-          throw new Error("Dify 서버에서 HTML 페이지를 반환했습니다. URL이 올바른지 확인하세요.")
-        }
-        
+        let errorMessage = `HTTP ${response.status}: ${response.statusText}`
         try {
-          const errorData = JSON.parse(errorText)
-          const errorMessage = errorData.message || errorData.error || `HTTP ${response.status}: ${response.statusText}`
-          console.error("[Dify API] 오류:", errorMessage, errorData)
-          throw new Error(errorMessage)
-        } catch (parseError) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+          const errorData = JSON.parse(responseText)
+          errorMessage = errorData.error || errorData.message || errorMessage
+        } catch {
+          // JSON 파싱 실패 시 텍스트 그대로 사용
+          if (responseText.trim().startsWith("<!DOCTYPE") || responseText.trim().startsWith("<html")) {
+            errorMessage = "Dify 서버에서 HTML 페이지를 반환했습니다. URL이 올바른지 확인하세요."
+          } else {
+            errorMessage = responseText.substring(0, 200) || errorMessage
+          }
         }
+        console.error("[Dify API] 오류:", errorMessage)
+        throw new Error(errorMessage)
       }
 
-      const data = await response.json()
+      // 성공 응답 파싱
+      let data
+      try {
+        data = JSON.parse(responseText)
+      } catch (parseError) {
+        console.error("[Dify API] JSON 파싱 실패:", parseError)
+        throw new Error("서버에서 유효하지 않은 응답을 받았습니다.")
+      }
       
       // 프록시에서 오류가 있으면
       if (data.error) {
