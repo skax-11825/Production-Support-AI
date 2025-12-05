@@ -1,22 +1,20 @@
 import { Card } from "@/components/ui/card"
-import { Workflow, Link2, Database, MessageSquare } from "lucide-react"
+import { Workflow, Database, MessageSquare } from "lucide-react"
 import Image from "next/image"
 
 export function DifyIntegrationSection() {
   return (
     <section id="integration" className="border-y border-border/40 bg-secondary/30 py-32">
       <div className="container mx-auto px-6">
-        <div className="mb-12 flex items-center justify-center gap-4">
-          <span className="text-5xl font-bold tracking-tight text-foreground">M-axis</span>
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 shadow-lg">
-            <Link2 className="h-6 w-6 text-white" />
-          </div>
+        <div className="mb-12 flex items-center justify-center gap-3">
+          <span className="text-4xl font-bold tracking-tight text-foreground">M-axis</span>
+          <span className="text-3xl font-light text-muted-foreground">+</span>
           <Image 
             src="/dify.png" 
             alt="Dify" 
-            width={130} 
-            height={52} 
-            className="h-13 w-auto object-contain" 
+            width={80} 
+            height={32} 
+            className="h-8 w-auto object-contain" 
           />
         </div>
 
