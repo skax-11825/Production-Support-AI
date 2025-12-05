@@ -24,10 +24,22 @@ interface DifyConfig {
   apiServerUrl: string
 }
 
+// 에이전트별 기본 설정
+const DEFAULT_CONFIGS: Record<AgentType, { apiKey: string; baseUrl: string }> = {
+  "error-lense": {
+    apiKey: "app-hKVB2xN9C5deXeavB9SAfkRo",
+    baseUrl: "https://ai-platform-deploy.koreacentral.cloudapp.azure.com:3000/v1",
+  },
+  "lot-scheduling": {
+    apiKey: "app-rzR04Xc0vdXlhXaHN6XXqXPr",  // State Chase (LOT Scheduling)
+    baseUrl: "https://ai-platform-deploy.koreacentral.cloudapp.azure.com:3000/v1",
+  },
+}
+
 export function ChatInterface({ agentType }: ChatInterfaceProps) {
   const initialMessage =
     agentType === "lot-scheduling"
-      ? "Hello! I'm the LOT Scheduling Agent. I can help you optimize production schedules, allocate resources efficiently, and manage lot priorities. What would you like to schedule today?"
+      ? "Hello! I'm the State Chase Agent. I can help you optimize production schedules, allocate resources efficiently, and manage lot priorities. What would you like to schedule today?"
       : "Hello! I'm Error Lense AI. I can help you analyze errors, identify root causes, and suggest solutions for your manufacturing systems. What issue can I help you investigate?"
 
   const [messages, setMessages] = useState<Message[]>([
@@ -41,28 +53,49 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
   const [config, setConfig] = useState<DifyConfig | null>(null)
   const [conversationId, setConversationId] = useState<string | null>(null)
 
+  // 에이전트별 localStorage 키
+  const storageKey = `difyConfig_${agentType}`
+
   useEffect(() => {
     loadConfig()
-  }, [])
+  }, [agentType])
 
   const loadConfig = () => {
-    const saved = localStorage.getItem("difyConfig")
+    const defaultConfig = DEFAULT_CONFIGS[agentType]
+    const saved = localStorage.getItem(storageKey)
+    
     if (saved) {
       try {
         const parsed = JSON.parse(saved)
         setConfig({
-          difyApiBase: parsed.difyApiBase || "",
-          difyApiKey: parsed.difyApiKey || "",
+          difyApiBase: parsed.difyApiBase || defaultConfig.baseUrl,
+          difyApiKey: parsed.difyApiKey || defaultConfig.apiKey,
           apiServerUrl: parsed.apiServerUrl || "",
         })
       } catch (e) {
         console.error("Failed to load config:", e)
+        // 파싱 실패 시 기본값 사용
+        setConfig({
+          difyApiBase: defaultConfig.baseUrl,
+          difyApiKey: defaultConfig.apiKey,
+          apiServerUrl: "",
+        })
       }
+    } else {
+      // 저장된 설정이 없으면 기본값으로 초기화하고 저장
+      const newConfig = {
+        difyApiBase: defaultConfig.baseUrl,
+        difyApiKey: defaultConfig.apiKey,
+        apiServerUrl: "",
+      }
+      setConfig(newConfig)
+      localStorage.setItem(storageKey, JSON.stringify(newConfig))
     }
   }
 
   const handleConfigChange = (newConfig: DifyConfig) => {
     setConfig(newConfig)
+    localStorage.setItem(storageKey, JSON.stringify(newConfig))
   }
 
   const sendMessageToDify = async (message: string): Promise<string> => {
@@ -188,7 +221,10 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
           <h3 className="text-sm font-medium text-muted-foreground">
             {agentType === "lot-scheduling" ? "LOT Scheduling Agent" : "Error Lense AI"}
           </h3>
-          <SettingsDialog onConfigChange={handleConfigChange} />
+          <SettingsDialog 
+            agentType={agentType} 
+            onConfigChange={handleConfigChange} 
+          />
         </div>
 
         {/* 메시지 영역 */}

@@ -7,21 +7,39 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Settings, CheckCircle2, XCircle, Eye, EyeOff, Info, ChevronDown, ChevronUp, X } from "lucide-react"
 
+type AgentType = "lot-scheduling" | "error-lense"
+
 interface DifyConfig {
   difyApiBase: string
   difyApiKey: string
   apiServerUrl: string
 }
 
+// 에이전트별 기본 설정
+const DEFAULT_CONFIGS: Record<AgentType, { apiKey: string; baseUrl: string }> = {
+  "error-lense": {
+    apiKey: "app-hKVB2xN9C5deXeavB9SAfkRo",
+    baseUrl: "https://ai-platform-deploy.koreacentral.cloudapp.azure.com:3000/v1",
+  },
+  "lot-scheduling": {
+    apiKey: "app-rzR04Xc0vdXlhXaHN6XXqXPr",  // State Chase (LOT Scheduling)
+    baseUrl: "https://ai-platform-deploy.koreacentral.cloudapp.azure.com:3000/v1",
+  },
+}
+
 interface SettingsDialogProps {
+  agentType: AgentType
   onConfigChange?: (config: DifyConfig) => void
 }
 
-export function SettingsDialog({ onConfigChange }: SettingsDialogProps) {
+export function SettingsDialog({ agentType, onConfigChange }: SettingsDialogProps) {
+  const storageKey = `difyConfig_${agentType}`
+  const defaultConfig = DEFAULT_CONFIGS[agentType]
+  
   const [open, setOpen] = useState(false)
   const [config, setConfig] = useState<DifyConfig>({
-    difyApiBase: "",
-    difyApiKey: "",
+    difyApiBase: defaultConfig.baseUrl,
+    difyApiKey: defaultConfig.apiKey,
     apiServerUrl: "",
   })
   const [apiServerStatus, setApiServerStatus] = useState<{ connected: boolean; message: string } | null>(null)
@@ -34,23 +52,32 @@ export function SettingsDialog({ onConfigChange }: SettingsDialogProps) {
   }, [])
 
   const loadSettings = () => {
-    const saved = localStorage.getItem("difyConfig")
+    const saved = localStorage.getItem(storageKey)
     if (saved) {
       try {
         const parsed = JSON.parse(saved)
         setConfig({
-          difyApiBase: parsed.difyApiBase || "",
-          difyApiKey: parsed.difyApiKey || "",
+          difyApiBase: parsed.difyApiBase || defaultConfig.baseUrl,
+          difyApiKey: parsed.difyApiKey || defaultConfig.apiKey,
           apiServerUrl: parsed.apiServerUrl || "",
         })
       } catch (e) {
         console.error("Failed to load settings:", e)
       }
+    } else {
+      // 저장된 설정이 없으면 기본값 저장
+      const newConfig = {
+        difyApiBase: defaultConfig.baseUrl,
+        difyApiKey: defaultConfig.apiKey,
+        apiServerUrl: "",
+      }
+      setConfig(newConfig)
+      localStorage.setItem(storageKey, JSON.stringify(newConfig))
     }
   }
 
   const saveSettings = () => {
-    localStorage.setItem("difyConfig", JSON.stringify(config))
+    localStorage.setItem(storageKey, JSON.stringify(config))
     onConfigChange?.(config)
     setOpen(false)
   }
