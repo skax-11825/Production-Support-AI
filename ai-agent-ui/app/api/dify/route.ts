@@ -1,5 +1,17 @@
 import { NextRequest, NextResponse } from "next/server"
 
+// CORS 헤더 설정 (하드코딩)
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  "Access-Control-Max-Age": "86400",
+}
+
+export async function OPTIONS(request: NextRequest) {
+  return NextResponse.json({}, { headers: corsHeaders })
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -8,7 +20,7 @@ export async function POST(request: NextRequest) {
     if (!url || !apiKey) {
       return NextResponse.json(
         { error: "URL and API Key are required" },
-        { status: 400 }
+        { status: 400, headers: corsHeaders }
       )
     }
 
@@ -27,25 +39,47 @@ export async function POST(request: NextRequest) {
     }
 
     // Authorization 헤더 생성 및 검증
-    const authHeader = `Bearer ${trimmedApiKey}`
-    console.log("[Dify Proxy] Authorization 헤더 생성됨:", authHeader.substring(0, 20) + "...")
+    // API Key에 특수문자가 있는지 확인하고 인코딩
+    const cleanApiKey = trimmedApiKey.replace(/\s+/g, "") // 모든 공백 제거
+    if (!cleanApiKey) {
+      console.error("[Dify Proxy] API Key가 공백만 있습니다.")
+      return NextResponse.json(
+        { error: "API Key가 올바르지 않습니다. 공백 없이 입력하세요." },
+        { status: 400, headers: corsHeaders }
+      )
+    }
+    
+    const authHeader = `Bearer ${cleanApiKey}`
+    console.log("[Dify Proxy] Authorization 헤더 생성됨:", authHeader.substring(0, 25) + "...")
+    console.log("[Dify Proxy] API Key 정리 후 길이:", cleanApiKey.length)
+    
+    // Authorization 헤더 형식 검증
+    if (!authHeader.startsWith("Bearer ") || authHeader.length < 15) {
+      console.error("[Dify Proxy] Authorization 헤더 형식이 올바르지 않습니다:", authHeader.substring(0, 30))
+      return NextResponse.json(
+        { error: "API Key 형식이 올바르지 않습니다. Dify에서 발급받은 API Key를 확인하세요." },
+        { status: 400, headers: corsHeaders }
+      )
+    }
     
     // 사용자가 입력한 URL을 그대로 사용 (수정하지 않음)
 
     // Dify API 호출 (서버 사이드에서 실행되므로 CORS 문제 없음)
     // 브라우저처럼 보이도록 User-Agent 추가 (일부 서버가 User-Agent를 체크할 수 있음)
-    const requestHeaders: HeadersInit = {
+    const requestHeaders: Record<string, string> = {
       "Authorization": authHeader,
       "Content-Type": "application/json",
       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
       "Accept": "application/json",
     }
     
-    console.log("[Dify Proxy] 요청 헤더:", {
-      "Authorization": authHeader.substring(0, 20) + "...",
+    console.log("[Dify Proxy] 요청 헤더 (요약):", {
+      "Authorization": authHeader.substring(0, 25) + "...",
       "Content-Type": requestHeaders["Content-Type"],
       "User-Agent": requestHeaders["User-Agent"].substring(0, 50) + "...",
+      "Accept": requestHeaders["Accept"],
     })
+    console.log("[Dify Proxy] Authorization 헤더 전체 길이:", authHeader.length)
     
     const response = await fetch(url, {
       method: "POST",
@@ -81,7 +115,7 @@ export async function POST(request: NextRequest) {
         { 
           error: errorMsg
         },
-        { status: response.status || 500 }
+        { status: response.status || 500, headers: corsHeaders }
       )
     }
 
@@ -115,21 +149,23 @@ export async function POST(request: NextRequest) {
         }
         
         console.error("[Dify Proxy] Dify API 오류:", errorMessage, errorData)
+        console.error("[Dify Proxy] 사용된 Authorization 헤더:", authHeader.substring(0, 30) + "...")
         return NextResponse.json(
           { error: errorMessage },
-          { status: response.status }
+          { status: response.status, headers: corsHeaders }
         )
       } catch (parseError) {
         console.error("[Dify Proxy] JSON 파싱 실패:", parseError)
         return NextResponse.json(
           { error: `HTTP ${response.status}: ${response.statusText}. 응답: ${responseText.substring(0, 200)}` },
-          { status: response.status }
+          { status: response.status, headers: corsHeaders }
         )
       }
     }
 
     const data = JSON.parse(responseText)
-    return NextResponse.json(data)
+    console.log("[Dify Proxy] 성공 응답 받음")
+    return NextResponse.json(data, { headers: corsHeaders })
   } catch (error) {
     console.error("[Dify Proxy] 예외 발생:", error)
     
@@ -147,7 +183,7 @@ export async function POST(request: NextRequest) {
     
     return NextResponse.json(
       { error: errorMessage },
-      { status: 500 }
+      { status: 500, headers: corsHeaders }
     )
   }
 }

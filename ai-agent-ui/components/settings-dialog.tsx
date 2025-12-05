@@ -110,11 +110,22 @@ export function SettingsDialog({ onConfigChange }: SettingsDialogProps) {
     }
 
     try {
-      // API Key 검증
-      if (!config.difyApiKey || !config.difyApiKey.trim()) {
+      // API Key 검증 (더 엄격하게)
+      const trimmedApiKey = (config.difyApiKey || "").trim()
+      const cleanApiKey = trimmedApiKey.replace(/\s+/g, "") // 모든 공백 제거
+      
+      if (!trimmedApiKey || !cleanApiKey) {
         setDifyStatus({
           connected: false,
           message: "API Key를 입력하세요.",
+        })
+        return
+      }
+      
+      if (cleanApiKey.length < 10) {
+        setDifyStatus({
+          connected: false,
+          message: "API Key가 너무 짧습니다. 올바른 API Key를 입력하세요.",
         })
         return
       }
@@ -122,7 +133,8 @@ export function SettingsDialog({ onConfigChange }: SettingsDialogProps) {
       // 사용자가 입력한 URL을 그대로 사용
       const url = `${config.difyApiBase}/chat-messages`
       console.log("[Dify] 연결 테스트:", url)
-      console.log("[Dify] API Key 길이:", config.difyApiKey.trim().length)
+      console.log("[Dify] API Key 길이:", cleanApiKey.length)
+      console.log("[Dify] API Key 시작:", cleanApiKey.substring(0, 10) + "...")
       
       // 프록시를 통해 요청 (CORS 및 Mixed Content 문제 해결)
       // 프록시는 서버 사이드에서 실행되므로 HTTP/HTTPS 모두 가능
@@ -133,7 +145,7 @@ export function SettingsDialog({ onConfigChange }: SettingsDialogProps) {
         },
         body: JSON.stringify({
           url: url,
-          apiKey: config.difyApiKey.trim(), // 공백 제거하여 전달
+          apiKey: cleanApiKey, // 모든 공백 제거된 API Key 전달
           payload: {
             inputs: {},
             query: "테스트",
