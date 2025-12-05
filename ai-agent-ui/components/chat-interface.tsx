@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Send, Bot, User, Loader2 } from "lucide-react"
+import { Send, User, Loader2, TrendingUp, AlertCircle } from "lucide-react"
 import { SettingsDialog } from "@/components/settings-dialog"
 
 type Message = {
@@ -37,8 +37,8 @@ const DEFAULT_API_KEYS: Record<AgentType, string> = {
 export function ChatInterface({ agentType }: ChatInterfaceProps) {
   const initialMessage =
     agentType === "lot-scheduling"
-      ? "Hello! I'm the State Chase Agent. I can help you optimize production schedules, allocate resources efficiently, and manage lot priorities. What would you like to schedule today?"
-      : "Hello! I'm Error Lense AI. I can help you analyze errors, identify root causes, and suggest solutions for your manufacturing systems. What issue can I help you investigate?"
+      ? "안녕하세요! State Chase Agent입니다. 무엇을 도와드릴까요?"
+      : "안녕하세요! Error Lense Agent입니다. 무엇을 도와드릴까요?"
 
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -218,7 +218,7 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
         {/* 헤더: 설정 버튼 */}
         <div className="flex items-center justify-between border-b border-border/50 p-4">
           <h3 className="text-sm font-medium text-muted-foreground">
-            {agentType === "lot-scheduling" ? "LOT Scheduling Agent" : "Error Lense AI"}
+            {agentType === "lot-scheduling" ? "State Chase Agent" : "Error Lense Agent"}
           </h3>
           <SettingsDialog 
             agentType={agentType} 
@@ -232,14 +232,26 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
             <div key={index} className={`flex gap-4 ${message.role === "user" ? "flex-row-reverse" : "flex-row"}`}>
               <div
                 className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${
-                  message.role === "user" ? "bg-secondary" : "bg-accent text-accent-foreground"
+                  message.role === "user" 
+                    ? "bg-secondary" 
+                    : agentType === "lot-scheduling"
+                      ? "bg-gradient-to-br from-blue-500 to-purple-600"
+                      : "bg-gradient-to-br from-orange-500 to-red-600"
                 }`}
               >
-                {message.role === "user" ? <User className="h-5 w-5" /> : <Bot className="h-5 w-5" />}
+                {message.role === "user" ? (
+                  <User className="h-5 w-5" />
+                ) : agentType === "lot-scheduling" ? (
+                  <TrendingUp className="h-5 w-5 text-white" />
+                ) : (
+                  <AlertCircle className="h-5 w-5 text-white" />
+                )}
               </div>
               <div
                 className={`max-w-[70%] rounded-2xl px-4 py-3 ${
-                  message.role === "user" ? "bg-secondary text-foreground" : "bg-muted text-foreground"
+                  message.role === "user" 
+                    ? "bg-secondary text-foreground" 
+                    : "bg-white dark:bg-slate-800 text-foreground border border-border/50 shadow-sm"
                 }`}
               >
                 <p className="leading-relaxed whitespace-pre-wrap">{message.content}</p>
@@ -248,10 +260,18 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
           ))}
           {isLoading && (
             <div className="flex gap-4">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent text-accent-foreground">
-                <Bot className="h-5 w-5" />
+              <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${
+                agentType === "lot-scheduling"
+                  ? "bg-gradient-to-br from-blue-500 to-purple-600"
+                  : "bg-gradient-to-br from-orange-500 to-red-600"
+              }`}>
+                {agentType === "lot-scheduling" ? (
+                  <TrendingUp className="h-5 w-5 text-white" />
+                ) : (
+                  <AlertCircle className="h-5 w-5 text-white" />
+                )}
               </div>
-              <div className="max-w-[70%] rounded-2xl bg-muted px-4 py-3">
+              <div className="max-w-[70%] rounded-2xl bg-white dark:bg-slate-800 border border-border/50 shadow-sm px-4 py-3">
                 <div className="flex items-center gap-2">
                   <Loader2 className="h-4 w-4 animate-spin" />
                   <span className="text-muted-foreground">처리 중...</span>
@@ -268,7 +288,7 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyPress={(e) => e.key === "Enter" && !e.shiftKey && !isLoading && handleSend()}
-              placeholder={`Ask ${agentType === "lot-scheduling" ? "LOT Scheduling Agent" : "Error Lense"} anything...`}
+              placeholder={agentType === "lot-scheduling" ? "State Chase에게 질문하세요..." : "Error Lense에게 질문하세요..."}
               className="flex-1 rounded-full border-border/50 bg-secondary/50 px-6"
               disabled={isLoading}
             />
