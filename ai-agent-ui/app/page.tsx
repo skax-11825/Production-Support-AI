@@ -10,8 +10,8 @@ export default function Home() {
       <Header />
       <HeroSection />
       <SystemWorkflow />
-      <AgentNavigation />
       <DifyIntegrationSection />
+      <AgentNavigation />
     </main>
   )
 }
