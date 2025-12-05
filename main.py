@@ -669,7 +669,7 @@ async def proxy_dify(request: DifyProxyRequest):
     logger.info(f"[Dify Proxy] Payload: {json.dumps(request.payload, ensure_ascii=False)[:200]}...")
     
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
             response = await client.post(
                 clean_url,
                 headers=headers,

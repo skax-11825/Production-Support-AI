@@ -502,13 +502,13 @@ export function SettingsDialog({ onConfigChange }: SettingsDialogProps) {
                 )}
               </div>
               
-              {/* 에러 상세 메시지 (접기/펼치기 가능) */}
+              {/* 에러 상세 메시지 (접기/펼치기 가능, 스크롤 지원) */}
               {difyStatus && !difyStatus.connected && showErrorDetails && (
                 <div className="relative mt-2 p-2 rounded bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800">
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="absolute top-1 right-1 h-5 w-5"
+                    className="absolute top-1 right-1 h-5 w-5 z-10"
                     onClick={() => {
                       setShowErrorDetails(false)
                       setDifyStatus(null)
@@ -516,9 +516,11 @@ export function SettingsDialog({ onConfigChange }: SettingsDialogProps) {
                   >
                     <X className="h-3 w-3" />
                   </Button>
-                  <p className="text-xs text-red-700 dark:text-red-300 pr-6 whitespace-pre-line">
-                    {difyStatus.message}
-                  </p>
+                  <div className="max-h-32 overflow-y-auto pr-6">
+                    <p className="text-xs text-red-700 dark:text-red-300 whitespace-pre-line">
+                      {difyStatus.message}
+                    </p>
+                  </div>
                 </div>
               )}
             </div>
