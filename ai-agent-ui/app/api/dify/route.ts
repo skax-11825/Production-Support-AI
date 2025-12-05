@@ -1,30 +1,9 @@
 import { NextRequest, NextResponse } from "next/server"
 
-// URL 정리 함수
-function cleanUrl(url: string): string {
-  return url
-    .trim()
-    .replace(/[,;]+$/, "") // 끝의 쉼표, 세미콜론 제거
-    .replace(/\/+$/, "") // 끝의 슬래시 제거
-}
-
-// Dify API URL 생성 (v1 경로 자동 처리)
-function buildDifyApiUrl(baseUrl: string, endpoint: string = "chat-messages"): string {
-  const cleaned = cleanUrl(baseUrl)
-  
-  // 이미 /v1이 포함되어 있는지 확인
-  if (cleaned.includes("/v1")) {
-    return `${cleaned}/${endpoint}`
-  }
-  
-  // /v1이 없으면 추가
-  return `${cleaned}/v1/${endpoint}`
-}
-
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    let { url, apiKey, payload } = body
+    const { url, apiKey, payload } = body
 
     if (!url || !apiKey) {
       return NextResponse.json(
@@ -33,15 +12,11 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // URL 정리 및 Dify API 경로 생성
-    const cleanedUrl = cleanUrl(url)
-    const difyApiUrl = buildDifyApiUrl(cleanedUrl)
-    
-    console.log("[Dify Proxy] 요청 URL:", difyApiUrl)
-    console.log("[Dify Proxy] 원본 URL:", url)
+    // 사용자가 입력한 URL을 그대로 사용 (수정하지 않음)
+    console.log("[Dify Proxy] 요청 URL:", url)
 
     // Dify API 호출 (서버 사이드에서 실행되므로 CORS 문제 없음)
-    const response = await fetch(difyApiUrl, {
+    const response = await fetch(url, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
