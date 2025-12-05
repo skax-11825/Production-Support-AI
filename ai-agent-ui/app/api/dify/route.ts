@@ -31,16 +31,32 @@ export async function POST(request: NextRequest) {
     const responseText = await response.text()
     
     console.log("[Dify Proxy] 응답 상태:", response.status, response.statusText)
-    console.log("[Dify Proxy] 응답 본문 (처음 200자):", responseText.substring(0, 200))
+    console.log("[Dify Proxy] 응답 본문 (처음 500자):", responseText.substring(0, 500))
+    console.log("[Dify Proxy] 응답 헤더:", Object.fromEntries(response.headers.entries()))
     
     // HTML 응답인지 확인 (Ngrok 경고 페이지 또는 에러 페이지)
     if (responseText.trim().startsWith("<!DOCTYPE") || responseText.trim().startsWith("<html")) {
-      console.error("[Dify Proxy] HTML 응답 감지 - Dify 서버 URL이 잘못되었거나 인증 문제일 수 있습니다.")
+      console.error("[Dify Proxy] HTML 응답 감지")
+      console.error("[Dify Proxy] 상태 코드:", response.status)
+      console.error("[Dify Proxy] 응답 URL:", url)
+      
+      // 상태 코드에 따른 더 구체적인 메시지
+      let errorMsg = "Dify 서버에서 HTML 페이지를 반환했습니다."
+      if (response.status === 403) {
+        errorMsg += " 접근이 거부되었습니다. Dify 서버가 특정 IP나 도메인만 허용하도록 설정되어 있을 수 있습니다. Azure 방화벽이나 Dify 서버 설정을 확인하세요."
+      } else if (response.status === 404) {
+        errorMsg += " 요청한 엔드포인트를 찾을 수 없습니다. Dify API Base URL이 올바른지 확인하세요."
+      } else if (response.status === 401) {
+        errorMsg += " 인증이 실패했습니다. API Key가 올바른지 확인하세요."
+      } else {
+        errorMsg += " Dify 서버 설정이나 네트워크 접근 권한을 확인하세요."
+      }
+      
       return NextResponse.json(
         { 
-          error: "Dify 서버에서 HTML 페이지를 반환했습니다. 다음을 확인하세요: 1) Dify API Base URL이 올바른지 확인 (예: https://your-dify.com 또는 https://your-dify.com/v1) 2) API Key가 유효한지 확인 3) Dify 서버가 정상 작동 중인지 확인 4) URL 끝에 쉼표(,)나 불필요한 문자가 없는지 확인"
+          error: errorMsg
         },
-        { status: 500 }
+        { status: response.status || 500 }
       )
     }
 
