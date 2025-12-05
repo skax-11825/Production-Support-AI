@@ -69,7 +69,9 @@ export async function POST(request: NextRequest) {
     }
     
     // URL 정리 및 검증
-    const cleanUrl = url.trim()
+    // 끝의 쉼표, 세미콜론, 공백 제거
+    let cleanUrl = url.trim().replace(/[,;\s]+$/, "")
+    
     if (!cleanUrl || !cleanUrl.startsWith("http")) {
       console.error("[Dify Proxy] URL이 올바르지 않습니다:", cleanUrl)
       return NextResponse.json(
@@ -77,6 +79,31 @@ export async function POST(request: NextRequest) {
         { status: 400, headers: corsHeaders }
       )
     }
+    
+    // 이미 chat-messages 경로가 포함되어 있으면 그대로 사용
+    // 그렇지 않으면 URL 정리 후 경로 추가
+    if (!cleanUrl.includes("/chat-messages")) {
+      // 끝의 슬래시 제거 (경로 추가 전)
+      cleanUrl = cleanUrl.replace(/\/+$/, "")
+      
+      // /v1 경로가 없으면 자동 추가 (일부 Dify 서버는 /v1이 필요함)
+      // 단, 포트 번호가 있거나 이미 경로가 있으면 그대로 사용
+      if (!cleanUrl.match(/\/v\d+$/) && !cleanUrl.match(/:\d+\//)) {
+        // 포트 번호가 있고 경로가 없는 경우에만 /v1 추가
+        if (cleanUrl.match(/:\d+$/)) {
+          cleanUrl = `${cleanUrl}/v1`
+        } else if (!cleanUrl.includes("/", 8)) { // 프로토콜 부분 이후에 슬래시가 없으면
+          cleanUrl = `${cleanUrl}/v1`
+        }
+      }
+      
+      // chat-messages 경로 추가
+      cleanUrl = `${cleanUrl}/chat-messages`
+    }
+    
+    console.log("[Dify Proxy] URL 정리 완료:")
+    console.log("  - 원본 URL:", url)
+    console.log("  - 정리된 URL:", cleanUrl)
 
     // Dify API 호출 (서버 사이드에서 실행되므로 CORS 문제 없음)
     // Dify API는 표준 Bearer 토큰 인증을 사용
@@ -121,21 +148,43 @@ export async function POST(request: NextRequest) {
     console.log("[Dify Proxy] ====================================")
     
     // HTML 응답인지 확인 (Ngrok 경고 페이지 또는 에러 페이지)
-    if (responseText.trim().startsWith("<!DOCTYPE") || responseText.trim().startsWith("<html")) {
+    if (responseText.trim().startsWith("<!DOCTYPE") || responseText.trim().startsWith("<html") || responseText.trim().startsWith("<!doctype")) {
       console.error("[Dify Proxy] HTML 응답 감지")
       console.error("[Dify Proxy] 상태 코드:", response.status)
-      console.error("[Dify Proxy] 응답 URL:", url)
+      console.error("[Dify Proxy] 응답 URL:", cleanUrl)
+      console.error("[Dify Proxy] HTML 응답 (처음 1000자):", responseText.substring(0, 1000))
       
       // 상태 코드에 따른 더 구체적인 메시지
       let errorMsg = "Dify 서버에서 HTML 페이지를 반환했습니다."
+      let suggestions = []
+      
       if (response.status === 403) {
-        errorMsg += " 접근이 거부되었습니다. Dify 서버가 특정 IP나 도메인만 허용하도록 설정되어 있을 수 있습니다. Azure 방화벽이나 Dify 서버 설정을 확인하세요."
+        errorMsg += " 접근이 거부되었습니다."
+        suggestions.push("Dify 서버가 특정 IP나 도메인만 허용하도록 설정되어 있을 수 있습니다.")
+        suggestions.push("Azure 방화벽이나 Dify 서버 설정을 확인하세요.")
       } else if (response.status === 404) {
-        errorMsg += " 요청한 엔드포인트를 찾을 수 없습니다. Dify API Base URL이 올바른지 확인하세요."
+        errorMsg += " 요청한 엔드포인트를 찾을 수 없습니다."
+        suggestions.push("Dify API Base URL이 올바른지 확인하세요.")
+        suggestions.push("URL 형식: https://your-server.com:포트/v1 또는 https://your-server.com/v1")
+        suggestions.push("포트 번호가 있는 경우 URL 끝에 쉼표가 없는지 확인하세요.")
+        suggestions.push("일부 Dify 서버는 /v1 경로가 필요합니다.")
+        
+        // URL에 문제가 있을 수 있는 경우 제안
+        if (cleanUrl.includes(":3000")) {
+          suggestions.push("포트 3000이 올바른지 확인하세요. Dify 기본 포트는 보통 80 또는 443입니다.")
+        }
+        if (!cleanUrl.includes("/v1") && !cleanUrl.includes("/chat-messages")) {
+          suggestions.push("URL에 /v1 경로가 포함되어 있는지 확인하세요.")
+        }
       } else if (response.status === 401) {
-        errorMsg += " 인증이 실패했습니다. API Key가 올바른지 확인하세요."
+        errorMsg += " 인증이 실패했습니다."
+        suggestions.push("API Key가 올바른지 확인하세요.")
       } else {
         errorMsg += " Dify 서버 설정이나 네트워크 접근 권한을 확인하세요."
+      }
+      
+      if (suggestions.length > 0) {
+        errorMsg += "\n\n해결 방법:\n" + suggestions.map((s, i) => `${i + 1}. ${s}`).join("\n")
       }
       
       return NextResponse.json(

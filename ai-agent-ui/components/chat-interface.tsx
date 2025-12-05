@@ -80,8 +80,26 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
       throw new Error("API Key가 비어있습니다. 설정에서 API Key를 입력하세요.")
     }
 
-    // URL 정리
-    const baseUrl = (config.difyApiBase || "").trim().replace(/\/+$/, "")
+    // URL 정리 및 검증
+    let baseUrl = (config.difyApiBase || "").trim()
+    
+    // 끝의 쉼표, 세미콜론, 공백 제거
+    baseUrl = baseUrl.replace(/[,;\s]+$/, "")
+    
+    // 끝의 슬래시 제거
+    baseUrl = baseUrl.replace(/\/+$/, "")
+    
+    // /v1 경로가 없으면 자동 추가 (일부 Dify 서버는 /v1이 필요함)
+    // 단, 포트 번호가 있거나 이미 경로가 있으면 그대로 사용
+    if (!baseUrl.match(/\/v\d+$/) && !baseUrl.match(/:\d+\//)) {
+      // 포트 번호가 있고 경로가 없는 경우에만 /v1 추가
+      if (baseUrl.match(/:\d+$/)) {
+        baseUrl = `${baseUrl}/v1`
+      } else if (!baseUrl.includes("/", 8)) { // 프로토콜 부분 이후에 슬래시가 없으면
+        baseUrl = `${baseUrl}/v1`
+      }
+    }
+    
     const url = `${baseUrl}/chat-messages`
     
     const payload = {
