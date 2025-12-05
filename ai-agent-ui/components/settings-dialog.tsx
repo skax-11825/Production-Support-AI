@@ -119,8 +119,9 @@ export function SettingsDialog({ onConfigChange }: SettingsDialogProps) {
 
     try {
       // URL 정리 (공백, 쉼표 제거, 끝의 슬래시 제거)
-      const cleanedBase = config.difyApiBase.trim().replace(/[,;]$/, "").replace(/\/$/, "")
-      const url = `${cleanedBase}/chat-messages`
+      // 프록시에서 v1 경로를 자동으로 처리하므로 Base URL만 전달
+      const cleanedBase = config.difyApiBase.trim().replace(/[,;]+$/, "").replace(/\/+$/, "")
+      const url = cleanedBase // 프록시가 /v1/chat-messages를 자동 추가
       console.log("[Dify] 연결 테스트:", url)
       
       // Mixed Content 체크
@@ -290,7 +291,10 @@ export function SettingsDialog({ onConfigChange }: SettingsDialogProps) {
                     ) : (
                       <XCircle className="h-4 w-4 text-red-500" />
                     )}
-                    <span className={difyStatus.connected ? "text-green-500" : "text-red-500"}>
+                    <span 
+                      className={difyStatus.connected ? "text-green-500" : "text-red-500"}
+                      style={{ whiteSpace: "pre-line", wordBreak: "break-word" }}
+                    >
                       {difyStatus.message}
                     </span>
                   </div>

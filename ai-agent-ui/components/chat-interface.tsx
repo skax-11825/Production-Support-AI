@@ -71,8 +71,9 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
     }
 
     // URL 정리 (공백, 쉼표 제거, 끝의 슬래시 제거)
-    const cleanedBase = config.difyApiBase.trim().replace(/[,;]$/, "").replace(/\/$/, "")
-    const url = `${cleanedBase}/chat-messages`
+    // 프록시에서 v1 경로를 자동으로 처리하므로 Base URL만 전달
+    const cleanedBase = config.difyApiBase.trim().replace(/[,;]+$/, "").replace(/\/+$/, "")
+    const url = cleanedBase // 프록시가 /v1/chat-messages를 자동 추가
     const payload = {
       inputs: {},
       query: message,
