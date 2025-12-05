@@ -8,21 +8,13 @@ const _geist = Geist({ subsets: ["latin"] })
 const _geistMono = Geist_Mono({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "Error Lense - Agentic AI for SK Group",
-  description: "Intelligent error detection and resolution powered by Dify AI workflows",
+  title: "Production Support AI for SK AX",
+  description: "Intelligent production management and error resolution powered by advanced AI agents. Built for SK Group with seamless Maxis and Dify integration.",
   generator: "v0.app",
   icons: {
     icon: [
       {
-        url: "/icon-light-32x32.png",
-        media: "(prefers-color-scheme: light)",
-      },
-      {
-        url: "/icon-dark-32x32.png",
-        media: "(prefers-color-scheme: dark)",
-      },
-      {
-        url: "/icon.svg",
+        url: "/favicon.svg",
         type: "image/svg+xml",
       },
     ],

@@ -11,7 +11,9 @@ export function AgentNavigation() {
       description:
         "Optimize production scheduling with AI-powered lot planning and resource allocation for maximum efficiency.",
       href: "/state-chase",
-      color: "from-blue-500/20 to-cyan-500/20",
+      hoverColor: "from-blue-500/20 to-purple-500/20",
+      iconGradient: "from-blue-500 to-purple-600",
+      shadowColor: "shadow-purple-500/30",
     },
     {
       icon: AlertCircle,
@@ -19,7 +21,9 @@ export function AgentNavigation() {
       description:
         "Real-time error detection and resolution with intelligent root cause analysis and automated troubleshooting.",
       href: "/error-lense",
-      color: "from-orange-500/20 to-red-500/20",
+      hoverColor: "from-orange-500/20 to-red-500/20",
+      iconGradient: "from-orange-500 to-red-600",
+      shadowColor: "shadow-red-500/30",
     },
   ]
 
@@ -43,12 +47,12 @@ export function AgentNavigation() {
                 className="group relative overflow-hidden border-border/50 bg-card p-8 transition-all hover:border-accent/50 hover:shadow-2xl hover:shadow-accent/10"
               >
                 <div
-                  className={`absolute inset-0 bg-gradient-to-br ${agent.color} opacity-0 transition-opacity group-hover:opacity-100`}
+                  className={`absolute inset-0 bg-gradient-to-br ${agent.hoverColor} opacity-0 transition-opacity group-hover:opacity-100`}
                 />
 
                 <div className="relative">
-                  <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-accent text-accent-foreground transition-transform group-hover:scale-110">
-                    <Icon className="h-8 w-8" />
+                  <div className={`mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br ${agent.iconGradient} ${agent.shadowColor} shadow-xl transition-transform group-hover:scale-110`}>
+                    <Icon className="h-8 w-8 text-white" />
                   </div>
 
                   <h3 className="mb-4 text-2xl font-semibold">{agent.title}</h3>

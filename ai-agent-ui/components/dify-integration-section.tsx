@@ -6,20 +6,16 @@ export function DifyIntegrationSection() {
   return (
     <section id="integration" className="border-y border-border/40 bg-secondary/30 py-32">
       <div className="container mx-auto px-6">
-        <div className="mb-8 flex items-center justify-center gap-4">
-          <Card className="flex items-center gap-3 border-border/50 bg-card p-4 shadow-lg">
-            <Image src="/dify-logo.png" alt="Dify" width={80} height={30} className="h-8 w-auto" />
-          </Card>
-
-          <div className="text-2xl text-muted-foreground">+</div>
-
-          <Card className="flex items-center gap-3 border-border/50 bg-card p-4 shadow-lg">
-            <Image src="/maxis-icon.png" alt="M-axis Platform" width={48} height={48} className="h-12 w-12" />
-            <div className="text-left">
-              <div className="text-sm font-semibold">M-axis Platform</div>
-              <div className="text-xs text-muted-foreground">Manufacture · AI</div>
-            </div>
-          </Card>
+        <div className="mb-8 flex items-center justify-center gap-3">
+          <span className="text-4xl font-bold tracking-tight text-foreground">M-axis</span>
+          <span className="text-3xl font-light text-muted-foreground">+</span>
+          <Image 
+            src="/dify.png" 
+            alt="Dify" 
+            width={100} 
+            height={40} 
+            className="h-10 w-auto object-contain" 
+          />
         </div>
 
         <div className="mb-16 text-center">
