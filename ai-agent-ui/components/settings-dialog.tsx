@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Settings, CheckCircle2, XCircle, Eye, EyeOff, Info, ChevronDown, ChevronUp, X } from "lucide-react"
 
-type AgentType = "lot-scheduling" | "error-lense"
+type AgentType = "state-chase" | "error-lense"
 
 interface DifyConfig {
   difyApiBase: string
@@ -22,7 +22,7 @@ const DEFAULT_NGROK_URL = "https://youlanda-unconciliatory-unmirthfully.ngrok-fr
 // 에이전트별 기본 API Key
 const DEFAULT_API_KEYS: Record<AgentType, string> = {
   "error-lense": "app-hKVB2xN9C5deXeavB9SAfkRo",
-  "lot-scheduling": "app-rzR04Xc0vdXlhXaHN6XXqXPr",  // State Chase
+  "state-chase": "app-rzR04Xc0vdXlhXaHN6XXqXPr",  // State Chase
 }
 
 interface SettingsDialogProps {

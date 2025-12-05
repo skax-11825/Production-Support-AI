@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Send, User, Loader2, TrendingUp, AlertCircle } from "lucide-react"
+import { Send, User, Loader2, Bot } from "lucide-react"
 import { SettingsDialog } from "@/components/settings-dialog"
 
 type Message = {
@@ -12,7 +12,7 @@ type Message = {
   content: string
 }
 
-type AgentType = "lot-scheduling" | "error-lense"
+type AgentType = "state-chase" | "error-lense"
 
 interface ChatInterfaceProps {
   agentType: AgentType
@@ -31,12 +31,12 @@ const DEFAULT_NGROK_URL = "https://youlanda-unconciliatory-unmirthfully.ngrok-fr
 // 에이전트별 기본 API Key
 const DEFAULT_API_KEYS: Record<AgentType, string> = {
   "error-lense": "app-hKVB2xN9C5deXeavB9SAfkRo",
-  "lot-scheduling": "app-rzR04Xc0vdXlhXaHN6XXqXPr",  // State Chase
+  "state-chase": "app-rzR04Xc0vdXlhXaHN6XXqXPr",
 }
 
 export function ChatInterface({ agentType }: ChatInterfaceProps) {
   const initialMessage =
-    agentType === "lot-scheduling"
+    agentType === "state-chase"
       ? "안녕하세요! State Chase Agent입니다. 무엇을 도와드릴까요?"
       : "안녕하세요! Error Lense Agent입니다. 무엇을 도와드릴까요?"
 
@@ -218,7 +218,7 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
         {/* 헤더: 설정 버튼 */}
         <div className="flex items-center justify-between border-b border-border/50 p-4">
           <h3 className="text-sm font-medium text-muted-foreground">
-            {agentType === "lot-scheduling" ? "State Chase Agent" : "Error Lense Agent"}
+            {agentType === "state-chase" ? "State Chase Agent" : "Error Lense Agent"}
           </h3>
           <SettingsDialog 
             agentType={agentType} 
@@ -234,17 +234,15 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
                 className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${
                   message.role === "user" 
                     ? "bg-secondary" 
-                    : agentType === "lot-scheduling"
+                    : agentType === "state-chase"
                       ? "bg-gradient-to-br from-blue-500 to-purple-600"
                       : "bg-gradient-to-br from-orange-500 to-red-600"
                 }`}
               >
                 {message.role === "user" ? (
                   <User className="h-5 w-5" />
-                ) : agentType === "lot-scheduling" ? (
-                  <TrendingUp className="h-5 w-5 text-white" />
                 ) : (
-                  <AlertCircle className="h-5 w-5 text-white" />
+                  <Bot className="h-5 w-5 text-white" />
                 )}
               </div>
               <div
@@ -261,15 +259,11 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
           {isLoading && (
             <div className="flex gap-4">
               <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${
-                agentType === "lot-scheduling"
+                agentType === "state-chase"
                   ? "bg-gradient-to-br from-blue-500 to-purple-600"
                   : "bg-gradient-to-br from-orange-500 to-red-600"
               }`}>
-                {agentType === "lot-scheduling" ? (
-                  <TrendingUp className="h-5 w-5 text-white" />
-                ) : (
-                  <AlertCircle className="h-5 w-5 text-white" />
-                )}
+                <Bot className="h-5 w-5 text-white" />
               </div>
               <div className="max-w-[70%] rounded-2xl bg-white dark:bg-slate-800 border border-border/50 shadow-sm px-4 py-3">
                 <div className="flex items-center gap-2">
@@ -288,7 +282,7 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyPress={(e) => e.key === "Enter" && !e.shiftKey && !isLoading && handleSend()}
-              placeholder={agentType === "lot-scheduling" ? "State Chase에게 질문하세요..." : "Error Lense에게 질문하세요..."}
+              placeholder={agentType === "state-chase" ? "State Chase에게 질문하세요..." : "Error Lense에게 질문하세요..."}
               className="flex-1 rounded-full border-border/50 bg-secondary/50 px-6"
               disabled={isLoading}
             />
