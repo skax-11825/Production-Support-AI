@@ -110,9 +110,19 @@ export function SettingsDialog({ onConfigChange }: SettingsDialogProps) {
     }
 
     try {
+      // API Key 검증
+      if (!config.difyApiKey || !config.difyApiKey.trim()) {
+        setDifyStatus({
+          connected: false,
+          message: "API Key를 입력하세요.",
+        })
+        return
+      }
+
       // 사용자가 입력한 URL을 그대로 사용
       const url = `${config.difyApiBase}/chat-messages`
       console.log("[Dify] 연결 테스트:", url)
+      console.log("[Dify] API Key 길이:", config.difyApiKey.trim().length)
       
       // 프록시를 통해 요청 (CORS 및 Mixed Content 문제 해결)
       // 프록시는 서버 사이드에서 실행되므로 HTTP/HTTPS 모두 가능
