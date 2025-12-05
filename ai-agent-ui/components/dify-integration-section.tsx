@@ -6,9 +6,11 @@ export function DifyIntegrationSection() {
   return (
     <section id="integration" className="border-y border-border/40 bg-secondary/30 py-32">
       <div className="container mx-auto px-6">
-        <div className="mb-8 flex items-center justify-center gap-3">
+        <div className="mb-8 flex items-center justify-center gap-4">
           <span className="text-4xl font-bold tracking-tight text-foreground">M-axis</span>
-          <span className="text-3xl font-light text-muted-foreground">+</span>
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 shadow-lg">
+            <Link2 className="h-5 w-5 text-white" />
+          </div>
           <Image 
             src="/dify.png" 
             alt="Dify" 
