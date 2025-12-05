@@ -15,7 +15,7 @@ export async function OPTIONS(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { url, apiKey, payload } = body
+    const { url, apiKey, payload, appType } = body
 
     if (!url || !apiKey) {
       return NextResponse.json(
@@ -23,6 +23,8 @@ export async function POST(request: NextRequest) {
         { status: 400, headers: corsHeaders }
       )
     }
+    
+    console.log("[Dify Proxy] 앱 타입:", appType || "chatbot")
 
     // API Key 검증 및 로깅 (보안상 전체는 로깅하지 않음)
     // 모든 종류의 공백 문자 제거 (공백, 탭, 줄바꿈 등)
@@ -80,9 +82,13 @@ export async function POST(request: NextRequest) {
       )
     }
     
-    // 이미 chat-messages 경로가 포함되어 있으면 그대로 사용
+    // 이미 엔드포인트 경로가 포함되어 있으면 그대로 사용
     // 그렇지 않으면 URL 정리 후 경로 추가
-    if (!cleanUrl.includes("/chat-messages")) {
+    const hasEndpoint = cleanUrl.includes("/chat-messages") || 
+                        cleanUrl.includes("/workflows/run") || 
+                        cleanUrl.includes("/completion-messages")
+    
+    if (!hasEndpoint) {
       // 끝의 슬래시 제거 (경로 추가 전)
       cleanUrl = cleanUrl.replace(/\/+$/, "")
       
@@ -97,8 +103,15 @@ export async function POST(request: NextRequest) {
         }
       }
       
-      // chat-messages 경로 추가
-      cleanUrl = `${cleanUrl}/chat-messages`
+      // 앱 타입에 따른 엔드포인트 추가
+      const currentAppType = appType || "chatbot"
+      if (currentAppType === "workflow") {
+        cleanUrl = `${cleanUrl}/workflows/run`
+      } else if (currentAppType === "completion") {
+        cleanUrl = `${cleanUrl}/completion-messages`
+      } else {
+        cleanUrl = `${cleanUrl}/chat-messages`
+      }
     }
     
     console.log("[Dify Proxy] URL 정리 완료:")
@@ -229,8 +242,11 @@ export async function POST(request: NextRequest) {
             errorMessage = "인증 실패: Dify 서버의 접근 제한 설정 문제입니다.\n\n가능한 원인:\n1. Dify 서버가 특정 IP나 도메인만 허용하도록 설정되어 있습니다\n2. Vercel 서버의 IP가 화이트리스트에 없습니다\n3. CORS 설정이 올바르지 않습니다\n4. Azure 방화벽이 요청을 차단하고 있습니다\n\n해결 방법:\n1. Dify 서버 관리자에게 Vercel IP 범위를 허용 목록에 추가해달라고 요청하세요\n2. Azure 방화벽 설정에서 Vercel IP를 허용하세요\n3. Dify 서버의 CORS 설정을 확인하세요\n4. 임시로 IP 제한을 해제하고 테스트해보세요"
           } else if (difyErrorMsg.includes("workflow") || difyErrorMsg.includes("not published")) {
             errorMessage = "인증 실패: 워크플로우가 게시되지 않았습니다.\n\n가능한 원인:\n1. 사용 중인 워크플로우가 게시되지 않았습니다\n2. 워크플로우에 오류가 있습니다\n\n해결 방법:\n1. Dify 대시보드에서 워크플로우를 게시하세요\n2. 워크플로우에 오류가 없는지 확인하세요"
+          } else if (difyErrorMsg.includes("app_type") || difyErrorMsg.includes("invalid endpoint") || difyErrorMsg.includes("method not allowed")) {
+            // 앱 타입과 엔드포인트 불일치
+            errorMessage = `인증 실패: 앱 타입과 엔드포인트가 일치하지 않습니다.\n\n가능한 원인:\n1. 워크플로우 앱인데 /chat-messages 엔드포인트를 사용하고 있습니다\n2. 챗봇 앱인데 /workflows/run 엔드포인트를 사용하고 있습니다\n\n해결 방법:\n1. 설정에서 'Dify 앱 타입'을 올바르게 선택하세요\n2. 워크플로우 앱: '워크플로우 (Workflow)' 선택\n3. 챗봇/에이전트 앱: '챗봇 (Chatbot/Agent)' 선택`
           } else {
-            errorMessage = `인증 실패: ${fullErrorMsg}\n\n가능한 원인:\n1. Dify API Base URL이 올바르지 않을 수 있습니다\n2. API Key가 올바르지 않거나 만료되었을 수 있습니다\n3. Dify 서버 설정 문제일 수 있습니다\n4. 네트워크 연결 문제일 수 있습니다\n\n해결 방법:\n1. Dify API Base URL이 올바른지 확인하세요 (예: http://your-server.com/v1)\n2. URL 끝에 /v1이 포함되어 있는지 확인하세요\n3. Dify 서버가 실행 중인지 확인하세요\n4. 브라우저 개발자 도구의 네트워크 탭에서 실제 요청을 확인하세요\n5. Dify 서버 로그를 확인하세요`
+            errorMessage = `인증 실패: ${fullErrorMsg}\n\n가능한 원인:\n1. Dify API Base URL이 올바르지 않을 수 있습니다\n2. API Key가 올바르지 않거나 만료되었을 수 있습니다\n3. Dify 서버 설정 문제일 수 있습니다\n4. 네트워크 연결 문제일 수 있습니다\n5. 앱 타입이 올바르지 않을 수 있습니다\n\n해결 방법:\n1. Dify API Base URL이 올바른지 확인하세요 (예: http://your-server.com/v1)\n2. URL 끝에 /v1이 포함되어 있는지 확인하세요\n3. 설정에서 'Dify 앱 타입'이 올바른지 확인하세요\n4. Dify 서버가 실행 중인지 확인하세요\n5. Dify 서버 로그를 확인하세요`
           }
         } else if (response.status === 403) {
           errorMessage = "권한 없음: 이 API Key로는 해당 작업을 수행할 권한이 없습니다.\n\n해결 방법:\n1. API Key에 필요한 권한이 있는지 확인하세요\n2. Dify 서버가 특정 IP/도메인만 허용하도록 설정되어 있을 수 있습니다"

@@ -18,10 +18,13 @@ interface ChatInterfaceProps {
   agentType: AgentType
 }
 
+type DifyAppType = "chatbot" | "workflow" | "completion"
+
 interface DifyConfig {
   difyApiBase: string
   difyApiKey: string
   apiServerUrl: string
+  difyAppType: DifyAppType
 }
 
 export function ChatInterface({ agentType }: ChatInterfaceProps) {
@@ -54,6 +57,7 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
           difyApiBase: parsed.difyApiBase || "",
           difyApiKey: parsed.difyApiKey || "",
           apiServerUrl: parsed.apiServerUrl || "http://localhost:8000",
+          difyAppType: parsed.difyAppType || "workflow",
         })
       } catch (e) {
         console.error("Failed to load config:", e)
@@ -100,17 +104,39 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
       }
     }
     
-    const url = `${baseUrl}/chat-messages`
+    // 앱 타입에 따른 엔드포인트 결정
+    const appType = config.difyAppType || "workflow"
+    let endpoint = "/chat-messages"
+    if (appType === "workflow") {
+      endpoint = "/workflows/run"
+    } else if (appType === "completion") {
+      endpoint = "/completion-messages"
+    }
     
-    const payload = {
-      inputs: {},
-      query: message,
-      response_mode: "blocking" as const,
-      conversation_id: conversationId,
-      user: "web-ui-user",
+    const url = `${baseUrl}${endpoint}`
+    
+    // 앱 타입에 따른 payload 구성
+    let payload: Record<string, unknown>
+    if (appType === "workflow") {
+      // 워크플로우 앱은 다른 payload 형식 사용
+      // 워크플로우의 inputs에 query 변수가 정의되어 있어야 함
+      payload = {
+        inputs: { query: message },
+        response_mode: "blocking",
+        user: "web-ui-user",
+      }
+    } else {
+      // Chatbot/Completion 앱
+      payload = {
+        inputs: {},
+        query: message,
+        response_mode: "blocking",
+        conversation_id: conversationId,
+        user: "web-ui-user",
+      }
     }
 
-    console.log("[Dify API] 요청 시작:", { url, hasKey: !!cleanApiKey, keyLength: cleanApiKey.length })
+    console.log("[Dify API] 요청 시작:", { url, appType, hasKey: !!cleanApiKey, keyLength: cleanApiKey.length })
 
     try {
       // 프록시를 통해 요청 (CORS 문제 해결)
@@ -122,6 +148,7 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
         body: JSON.stringify({
           url: url,
           apiKey: cleanApiKey, // 모든 공백 제거된 API Key 전달
+          appType: appType, // 앱 타입 전달
           payload: payload,
         }),
       })
@@ -161,11 +188,35 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
       if (data.error) {
         throw new Error(data.error)
       }
-      console.log("[Dify API] 응답 성공:", { hasAnswer: !!data.answer, hasConversationId: !!data.conversation_id })
+      console.log("[Dify API] 응답 성공:", { 
+        hasAnswer: !!data.answer, 
+        hasOutputs: !!data.outputs, 
+        hasConversationId: !!data.conversation_id 
+      })
       
-      // conversation_id 저장
+      // conversation_id 저장 (chatbot 앱인 경우)
       if (data.conversation_id) {
         setConversationId(data.conversation_id)
+      }
+
+      // 워크플로우 응답 처리
+      if (appType === "workflow") {
+        // 워크플로우 응답은 data.outputs에 결과가 있음
+        if (data.outputs) {
+          // outputs에서 텍스트 응답 추출 (일반적인 출력 변수명들)
+          const output = data.outputs.text || 
+                        data.outputs.answer || 
+                        data.outputs.result || 
+                        data.outputs.output ||
+                        data.outputs.response ||
+                        JSON.stringify(data.outputs)
+          return output
+        }
+        // data 자체에 answer가 있을 수도 있음
+        if (data.answer) {
+          return data.answer
+        }
+        return data.data?.outputs?.text || data.data?.answer || "워크플로우 응답을 처리할 수 없습니다."
       }
 
       return data.answer || "응답을 받을 수 없습니다."

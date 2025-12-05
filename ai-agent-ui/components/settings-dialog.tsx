@@ -5,12 +5,17 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Settings, CheckCircle2, XCircle, Eye, EyeOff } from "lucide-react"
+import { Settings, CheckCircle2, XCircle, Eye, EyeOff, Info } from "lucide-react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+
+// Dify 앱 타입
+export type DifyAppType = "chatbot" | "workflow" | "completion"
 
 interface DifyConfig {
   difyApiBase: string
   difyApiKey: string
   apiServerUrl: string
+  difyAppType: DifyAppType
 }
 
 interface SettingsDialogProps {
@@ -23,6 +28,7 @@ export function SettingsDialog({ onConfigChange }: SettingsDialogProps) {
     difyApiBase: "",
     difyApiKey: "",
     apiServerUrl: "",
+    difyAppType: "workflow", // 기본값을 workflow로 설정 (사용자의 앱이 workflow 타입이므로)
   })
   const [apiServerStatus, setApiServerStatus] = useState<{ connected: boolean; message: string } | null>(null)
   const [difyStatus, setDifyStatus] = useState<{ connected: boolean; message: string } | null>(null)
@@ -41,6 +47,7 @@ export function SettingsDialog({ onConfigChange }: SettingsDialogProps) {
           difyApiBase: parsed.difyApiBase || "",
           difyApiKey: parsed.difyApiKey || "",
           apiServerUrl: parsed.apiServerUrl || "http://localhost:8000",
+          difyAppType: parsed.difyAppType || "workflow",
         })
       } catch (e) {
         console.error("Failed to load settings:", e)
@@ -170,13 +177,43 @@ export function SettingsDialog({ onConfigChange }: SettingsDialogProps) {
         }
       }
       
-      const url = `${cleanBaseUrl}/chat-messages`
+      // 앱 타입에 따른 엔드포인트 결정
+      const appType = config.difyAppType || "workflow"
+      let endpoint = "/chat-messages"
+      if (appType === "workflow") {
+        endpoint = "/workflows/run"
+      } else if (appType === "completion") {
+        endpoint = "/completion-messages"
+      }
+      
+      const url = `${cleanBaseUrl}${endpoint}`
       
       console.log("[Dify] 연결 테스트 시작:")
       console.log("  - Base URL:", cleanBaseUrl)
       console.log("  - 최종 URL:", url)
+      console.log("  - 앱 타입:", appType)
+      console.log("  - 엔드포인트:", endpoint)
       console.log("  - API Key 길이:", cleanApiKey.length)
       console.log("  - API Key 시작:", cleanApiKey.substring(0, 10) + "...")
+      
+      // 앱 타입에 따른 payload 구성
+      let payload: Record<string, unknown>
+      if (appType === "workflow") {
+        // 워크플로우 앱은 다른 payload 형식 사용
+        payload = {
+          inputs: { query: "테스트" }, // 워크플로우는 inputs 안에 변수를 넣음
+          response_mode: "blocking",
+          user: "web-ui-user",
+        }
+      } else {
+        // Chatbot/Completion 앱
+        payload = {
+          inputs: {},
+          query: "테스트",
+          response_mode: "blocking",
+          user: "web-ui-user",
+        }
+      }
       
       // 프록시를 통해 요청 (CORS 및 Mixed Content 문제 해결)
       // 프록시는 서버 사이드에서 실행되므로 HTTP/HTTPS 모두 가능
@@ -188,12 +225,8 @@ export function SettingsDialog({ onConfigChange }: SettingsDialogProps) {
         body: JSON.stringify({
           url: url,
           apiKey: cleanApiKey, // 모든 공백 제거된 API Key 전달
-          payload: {
-            inputs: {},
-            query: "테스트",
-            response_mode: "blocking",
-            user: "web-ui-user",
-          },
+          appType: appType, // 앱 타입 전달
+          payload: payload,
         }),
       })
 
@@ -269,15 +302,39 @@ export function SettingsDialog({ onConfigChange }: SettingsDialogProps) {
         </DialogHeader>
 
         <div className="space-y-4 py-4">
+          {/* Dify 앱 타입 선택 */}
+          <div className="space-y-2">
+            <Label htmlFor="difyAppType">Dify 앱 타입</Label>
+            <Select
+              value={config.difyAppType}
+              onValueChange={(value: DifyAppType) => setConfig({ ...config, difyAppType: value })}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="앱 타입 선택" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="workflow">워크플로우 (Workflow)</SelectItem>
+                <SelectItem value="chatbot">챗봇 (Chatbot/Agent)</SelectItem>
+                <SelectItem value="completion">텍스트 생성 (Completion)</SelectItem>
+              </SelectContent>
+            </Select>
+            <div className="flex items-start gap-2 rounded-md bg-blue-50 dark:bg-blue-950 p-2 text-xs">
+              <Info className="h-4 w-4 mt-0.5 text-blue-500 shrink-0" />
+              <span className="text-blue-700 dark:text-blue-300">
+                Dify 대시보드에서 앱 타입을 확인하세요. 워크플로우 앱은 /workflows/run 엔드포인트를 사용합니다.
+              </span>
+            </div>
+          </div>
+
           <div className="space-y-2">
             <Label htmlFor="difyApiBase">Dify API Base URL</Label>
             <Input
               id="difyApiBase"
-              placeholder="https://api.dify.ai/v1"
+              placeholder="http://ai-platform-deploy.koreacentral.cloudapp.azure.com/v1"
               value={config.difyApiBase}
               onChange={(e) => setConfig({ ...config, difyApiBase: e.target.value })}
             />
-            <p className="text-xs text-muted-foreground">자체 호스팅 시 전체 URL을 입력하세요 (예: https://your-server.com/v1)</p>
+            <p className="text-xs text-muted-foreground">자체 호스팅 시 전체 URL을 입력하세요 (예: http://your-server.com/v1)</p>
           </div>
 
           <div className="space-y-2">
@@ -344,17 +401,17 @@ export function SettingsDialog({ onConfigChange }: SettingsDialogProps) {
                   <span className="text-muted-foreground">확인 중...</span>
                 )}
               </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Dify 연결:</span>
+              <div className="flex items-start justify-between text-sm">
+                <span className="text-muted-foreground shrink-0">Dify 연결:</span>
                 {difyStatus ? (
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-start gap-2 ml-2">
                     {difyStatus.connected ? (
-                      <CheckCircle2 className="h-4 w-4 text-green-500" />
+                      <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0 mt-0.5" />
                     ) : (
-                      <XCircle className="h-4 w-4 text-red-500" />
+                      <XCircle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
                     )}
                     <span 
-                      className={difyStatus.connected ? "text-green-500" : "text-red-500"}
+                      className={`${difyStatus.connected ? "text-green-500" : "text-red-500"} text-xs`}
                       style={{ whiteSpace: "pre-line", wordBreak: "break-word" }}
                     >
                       {difyStatus.message}
@@ -363,6 +420,21 @@ export function SettingsDialog({ onConfigChange }: SettingsDialogProps) {
                 ) : (
                   <span className="text-muted-foreground">-</span>
                 )}
+              </div>
+            </div>
+          </div>
+
+          {/* 사내망 연결 안내 */}
+          <div className="rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950 p-3">
+            <div className="flex items-start gap-2">
+              <Info className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+              <div className="text-xs text-amber-800 dark:text-amber-200 space-y-1">
+                <p className="font-medium">사내망 Dify 서버 연결 시 주의사항:</p>
+                <ul className="list-disc ml-4 space-y-0.5">
+                  <li>Dify 서버가 사내망에 있으면 Vercel에서 직접 접근이 불가능할 수 있습니다</li>
+                  <li>Azure 방화벽에서 Vercel IP 범위를 허용해야 합니다</li>
+                  <li>또는 Dify 서버를 공개 네트워크로 노출하거나 VPN/프록시를 설정하세요</li>
+                </ul>
               </div>
             </div>
           </div>
