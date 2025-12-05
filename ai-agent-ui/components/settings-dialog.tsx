@@ -14,12 +14,16 @@ export type DifyAppType = "chatbot" | "workflow" | "completion"
 // 인증 헤더 타입
 export type AuthHeaderType = "bearer" | "api-key" | "x-api-key"
 
+// 프록시 모드
+export type ProxyMode = "vercel" | "ngrok"
+
 interface DifyConfig {
   difyApiBase: string
   difyApiKey: string
   apiServerUrl: string
   difyAppType: DifyAppType
   authHeaderType: AuthHeaderType
+  proxyMode: ProxyMode  // Vercel 프록시 또는 Ngrok(로컬) 프록시
 }
 
 interface SettingsDialogProps {
@@ -34,6 +38,7 @@ export function SettingsDialog({ onConfigChange }: SettingsDialogProps) {
     apiServerUrl: "",
     difyAppType: "chatbot", // 기본값을 chatbot으로 설정 (챗플로우 타입)
     authHeaderType: "bearer", // 기본 인증 방식
+    proxyMode: "ngrok", // 기본값을 ngrok으로 설정 (한국 IP 사용)
   })
   const [apiServerStatus, setApiServerStatus] = useState<{ connected: boolean; message: string } | null>(null)
   const [difyStatus, setDifyStatus] = useState<{ connected: boolean; message: string } | null>(null)
@@ -55,6 +60,7 @@ export function SettingsDialog({ onConfigChange }: SettingsDialogProps) {
           apiServerUrl: parsed.apiServerUrl || "http://localhost:8000",
           difyAppType: parsed.difyAppType || "chatbot",
           authHeaderType: parsed.authHeaderType || "bearer",
+          proxyMode: parsed.proxyMode || "ngrok",
         })
       } catch (e) {
         console.error("Failed to load settings:", e)
@@ -222,9 +228,20 @@ export function SettingsDialog({ onConfigChange }: SettingsDialogProps) {
         }
       }
       
-      // 프록시를 통해 요청 (CORS 및 Mixed Content 문제 해결)
-      // 프록시는 서버 사이드에서 실행되므로 HTTP/HTTPS 모두 가능
-      const response = await fetch("/api/dify", {
+      // 프록시 모드에 따라 다른 URL 사용
+      const proxyMode = config.proxyMode || "ngrok"
+      let proxyUrl = "/api/dify" // Vercel 프록시 (기본)
+      
+      if (proxyMode === "ngrok" && config.apiServerUrl) {
+        // Ngrok 프록시: 로컬 서버를 통해 Dify에 접근 (한국 IP 사용)
+        const ngrokUrl = config.apiServerUrl.trim().replace(/\/+$/, "")
+        proxyUrl = `${ngrokUrl}/proxy/dify`
+        console.log("[Dify] Ngrok 프록시 사용:", proxyUrl)
+      } else {
+        console.log("[Dify] Vercel 프록시 사용")
+      }
+      
+      const response = await fetch(proxyUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -393,14 +410,38 @@ export function SettingsDialog({ onConfigChange }: SettingsDialogProps) {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="apiServerUrl">API 서버 URL</Label>
+            <Label htmlFor="apiServerUrl">API 서버 URL (Ngrok)</Label>
             <Input
               id="apiServerUrl"
-              placeholder="http://localhost:8000"
+              placeholder="https://your-ngrok-url.ngrok-free.dev"
               value={config.apiServerUrl}
               onChange={(e) => setConfig({ ...config, apiServerUrl: e.target.value })}
             />
-            <p className="text-xs text-muted-foreground">FastAPI 서버의 URL을 입력하세요</p>
+            <p className="text-xs text-muted-foreground">FastAPI 서버의 Ngrok URL을 입력하세요</p>
+          </div>
+
+          {/* 프록시 모드 선택 */}
+          <div className="space-y-2">
+            <Label htmlFor="proxyMode">Dify 프록시 모드</Label>
+            <Select
+              value={config.proxyMode}
+              onValueChange={(value: ProxyMode) => setConfig({ ...config, proxyMode: value })}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="프록시 모드 선택" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ngrok">🇰🇷 Ngrok 프록시 (한국 IP - 권장)</SelectItem>
+                <SelectItem value="vercel">🇺🇸 Vercel 프록시 (미국 IP)</SelectItem>
+              </SelectContent>
+            </Select>
+            <div className="flex items-start gap-2 rounded-md bg-green-50 dark:bg-green-950 p-2 text-xs">
+              <Info className="h-4 w-4 mt-0.5 text-green-600 shrink-0" />
+              <span className="text-green-700 dark:text-green-300">
+                Dify 서버가 한국 IP만 허용하는 경우 &apos;Ngrok 프록시&apos;를 선택하세요. 
+                로컬 FastAPI 서버를 통해 Dify에 접근합니다.
+              </span>
+            </div>
           </div>
 
           <div className="space-y-2 rounded-lg border p-3">

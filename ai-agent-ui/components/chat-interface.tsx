@@ -20,6 +20,7 @@ interface ChatInterfaceProps {
 
 type DifyAppType = "chatbot" | "workflow" | "completion"
 type AuthHeaderType = "bearer" | "api-key" | "x-api-key"
+type ProxyMode = "vercel" | "ngrok"
 
 interface DifyConfig {
   difyApiBase: string
@@ -27,6 +28,7 @@ interface DifyConfig {
   apiServerUrl: string
   difyAppType: DifyAppType
   authHeaderType: AuthHeaderType
+  proxyMode: ProxyMode
 }
 
 export function ChatInterface({ agentType }: ChatInterfaceProps) {
@@ -61,6 +63,7 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
           apiServerUrl: parsed.apiServerUrl || "http://localhost:8000",
           difyAppType: parsed.difyAppType || "chatbot",
           authHeaderType: parsed.authHeaderType || "bearer",
+          proxyMode: parsed.proxyMode || "ngrok",
         })
       } catch (e) {
         console.error("Failed to load config:", e)
@@ -142,8 +145,20 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
     console.log("[Dify API] 요청 시작:", { url, appType, hasKey: !!cleanApiKey, keyLength: cleanApiKey.length })
 
     try {
-      // 프록시를 통해 요청 (CORS 문제 해결)
-      const response = await fetch("/api/dify", {
+      // 프록시 모드에 따라 다른 URL 사용
+      const proxyMode = config.proxyMode || "ngrok"
+      let proxyUrl = "/api/dify" // Vercel 프록시 (기본)
+      
+      if (proxyMode === "ngrok" && config.apiServerUrl) {
+        // Ngrok 프록시: 로컬 서버를 통해 Dify에 접근 (한국 IP 사용)
+        const ngrokUrl = config.apiServerUrl.trim().replace(/\/+$/, "")
+        proxyUrl = `${ngrokUrl}/proxy/dify`
+        console.log("[Dify API] Ngrok 프록시 사용:", proxyUrl)
+      } else {
+        console.log("[Dify API] Vercel 프록시 사용")
+      }
+      
+      const response = await fetch(proxyUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

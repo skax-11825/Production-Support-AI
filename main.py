@@ -3,13 +3,15 @@
 FastAPI를 사용한 REST API 엔드포인트
 Dify에서 받은 입력값으로 DB를 조회하고 결과를 반환합니다.
 """
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Any, Dict
 from datetime import date
 import logging
 import json
+import httpx
 from database import db
 from config import settings
 from utils import read_sql_file
@@ -595,6 +597,123 @@ async def search_inform_notes(request: SearchRequest):
     except Exception as e:
         logger.error(f"[상세 검색] 조회 중 오류: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"상세 조회 중 오류가 발생했습니다: {str(e)}")
+
+
+# ============================================================================
+# Dify 프록시 엔드포인트 (Vercel 미국 서버 → 로컬 한국 IP → Dify 한국 서버)
+# ============================================================================
+
+class DifyProxyRequest(BaseModel):
+    """Dify 프록시 요청 모델"""
+    url: str = Field(..., description="Dify API URL")
+    apiKey: str = Field(..., description="Dify API Key")
+    appType: Optional[str] = Field("chatbot", description="앱 타입: chatbot, workflow, completion")
+    authHeaderType: Optional[str] = Field("bearer", description="인증 헤더 타입: bearer, api-key, x-api-key")
+    payload: Dict[str, Any] = Field(..., description="Dify API 요청 payload")
+
+
+@app.post("/proxy/dify")
+async def proxy_dify(request: DifyProxyRequest):
+    """
+    Dify API 프록시 엔드포인트
+    
+    Vercel(미국)에서 직접 Dify(한국)에 접근할 수 없을 때,
+    로컬 서버(한국 IP)를 통해 프록시하여 접근합니다.
+    """
+    logger.info(f"[Dify Proxy] 요청 수신 - URL: {request.url}, 앱 타입: {request.appType}")
+    
+    # API Key 정리
+    clean_api_key = request.apiKey.strip().replace(" ", "")
+    
+    if not clean_api_key:
+        raise HTTPException(status_code=400, detail="API Key가 비어있습니다.")
+    
+    # URL 정리
+    clean_url = request.url.strip().rstrip("/,; ")
+    
+    # 엔드포인트가 없으면 추가
+    if not any(ep in clean_url for ep in ["/chat-messages", "/workflows/run", "/completion-messages"]):
+        # /v1 추가
+        if not clean_url.endswith("/v1"):
+            if ":" in clean_url.split("/")[-1]:  # 포트 번호가 있는 경우
+                clean_url = f"{clean_url}/v1"
+            elif "/" not in clean_url[8:]:  # 프로토콜 이후 경로가 없는 경우
+                clean_url = f"{clean_url}/v1"
+        
+        # 엔드포인트 추가
+        app_type = request.appType or "chatbot"
+        if app_type == "workflow":
+            clean_url = f"{clean_url}/workflows/run"
+        elif app_type == "completion":
+            clean_url = f"{clean_url}/completion-messages"
+        else:
+            clean_url = f"{clean_url}/chat-messages"
+    
+    # 인증 헤더 생성
+    auth_header_type = request.authHeaderType or "bearer"
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "User-Agent": "Dify-Proxy/1.0",
+    }
+    
+    if auth_header_type == "api-key":
+        headers["Authorization"] = f"Api-Key {clean_api_key}"
+    elif auth_header_type == "x-api-key":
+        headers["X-Api-Key"] = clean_api_key
+    else:  # bearer (기본)
+        headers["Authorization"] = f"Bearer {clean_api_key}"
+    
+    logger.info(f"[Dify Proxy] 최종 URL: {clean_url}")
+    logger.info(f"[Dify Proxy] 인증 헤더 타입: {auth_header_type}")
+    logger.info(f"[Dify Proxy] Payload: {json.dumps(request.payload, ensure_ascii=False)[:200]}...")
+    
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(
+                clean_url,
+                headers=headers,
+                json=request.payload
+            )
+            
+            logger.info(f"[Dify Proxy] 응답 상태: {response.status_code}")
+            
+            # 응답 텍스트 가져오기
+            response_text = response.text
+            
+            # HTML 응답 체크
+            if response_text.strip().startswith(("<!DOCTYPE", "<html", "<!doctype")):
+                logger.error(f"[Dify Proxy] HTML 응답 감지")
+                return JSONResponse(
+                    status_code=response.status_code or 500,
+                    content={"error": "Dify 서버에서 HTML 페이지를 반환했습니다. URL을 확인하세요."}
+                )
+            
+            # JSON 파싱 시도
+            try:
+                response_data = response.json()
+            except:
+                response_data = {"raw_response": response_text[:500]}
+            
+            if not response.is_success:
+                logger.error(f"[Dify Proxy] 오류 응답: {response_text[:500]}")
+                return JSONResponse(
+                    status_code=response.status_code,
+                    content={"error": response_data.get("message") or response_data.get("error") or response_text[:200]}
+                )
+            
+            logger.info(f"[Dify Proxy] 성공 응답")
+            return JSONResponse(content=response_data)
+            
+    except httpx.TimeoutException:
+        logger.error("[Dify Proxy] 타임아웃")
+        raise HTTPException(status_code=504, detail="Dify 서버 응답 타임아웃 (60초 초과)")
+    except httpx.ConnectError as e:
+        logger.error(f"[Dify Proxy] 연결 오류: {e}")
+        raise HTTPException(status_code=502, detail=f"Dify 서버에 연결할 수 없습니다: {str(e)}")
+    except Exception as e:
+        logger.error(f"[Dify Proxy] 예외: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"프록시 오류: {str(e)}")
 
 
 if __name__ == "__main__":
