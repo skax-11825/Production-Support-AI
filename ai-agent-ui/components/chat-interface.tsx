@@ -19,12 +19,14 @@ interface ChatInterfaceProps {
 }
 
 type DifyAppType = "chatbot" | "workflow" | "completion"
+type AuthHeaderType = "bearer" | "api-key" | "x-api-key"
 
 interface DifyConfig {
   difyApiBase: string
   difyApiKey: string
   apiServerUrl: string
   difyAppType: DifyAppType
+  authHeaderType: AuthHeaderType
 }
 
 export function ChatInterface({ agentType }: ChatInterfaceProps) {
@@ -57,7 +59,8 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
           difyApiBase: parsed.difyApiBase || "",
           difyApiKey: parsed.difyApiKey || "",
           apiServerUrl: parsed.apiServerUrl || "http://localhost:8000",
-          difyAppType: parsed.difyAppType || "workflow",
+          difyAppType: parsed.difyAppType || "chatbot",
+          authHeaderType: parsed.authHeaderType || "bearer",
         })
       } catch (e) {
         console.error("Failed to load config:", e)
@@ -149,6 +152,7 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
           url: url,
           apiKey: cleanApiKey, // 모든 공백 제거된 API Key 전달
           appType: appType, // 앱 타입 전달
+          authHeaderType: config.authHeaderType || "bearer", // 인증 헤더 타입
           payload: payload,
         }),
       })

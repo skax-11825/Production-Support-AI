@@ -15,7 +15,7 @@ export async function OPTIONS(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { url, apiKey, payload, appType } = body
+    const { url, apiKey, payload, appType, authHeaderType, tryAllAuthMethods } = body
 
     if (!url || !apiKey) {
       return NextResponse.json(
@@ -25,6 +25,7 @@ export async function POST(request: NextRequest) {
     }
     
     console.log("[Dify Proxy] 앱 타입:", appType || "chatbot")
+    console.log("[Dify Proxy] 인증 헤더 타입:", authHeaderType || "bearer")
 
     // API Key 검증 및 로깅 (보안상 전체는 로깅하지 않음)
     // 모든 종류의 공백 문자 제거 (공백, 탭, 줄바꿈 등)
@@ -55,20 +56,31 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Authorization 헤더 생성 및 검증
-    // Dify API는 Bearer 토큰 형식을 사용
-    const authHeader = `Bearer ${cleanApiKey}`
-    console.log("[Dify Proxy] Authorization 헤더 생성됨 (처음 30자):", authHeader.substring(0, 30) + "...")
-    console.log("[Dify Proxy] Authorization 헤더 전체 길이:", authHeader.length)
+    // Authorization 헤더 생성 - 선택된 형식에 따라 다르게 생성
+    const selectedAuthType = authHeaderType || "bearer"
+    let authHeaderName = "Authorization"
+    let authHeaderValue = ""
     
-    // Authorization 헤더 형식 검증
-    if (!authHeader.startsWith("Bearer ") || authHeader.length < 15) {
-      console.error("[Dify Proxy] Authorization 헤더 형식이 올바르지 않습니다:", authHeader.substring(0, 30))
-      return NextResponse.json(
-        { error: "API Key 형식이 올바르지 않습니다. Dify에서 발급받은 API Key를 확인하세요." },
-        { status: 400, headers: corsHeaders }
-      )
+    switch (selectedAuthType) {
+      case "api-key":
+        authHeaderName = "Authorization"
+        authHeaderValue = `Api-Key ${cleanApiKey}`
+        break
+      case "x-api-key":
+        authHeaderName = "X-Api-Key"
+        authHeaderValue = cleanApiKey
+        break
+      case "bearer":
+      default:
+        authHeaderName = "Authorization"
+        authHeaderValue = `Bearer ${cleanApiKey}`
+        break
     }
+    
+    console.log("[Dify Proxy] 인증 헤더 형식:", selectedAuthType)
+    console.log("[Dify Proxy] 인증 헤더 이름:", authHeaderName)
+    console.log("[Dify Proxy] 인증 헤더 값 (처음 20자):", authHeaderValue.substring(0, 20) + "...")
+    console.log("[Dify Proxy] 인증 헤더 전체 길이:", authHeaderValue.length)
     
     // URL 정리 및 검증
     // 끝의 쉼표, 세미콜론, 공백 제거
@@ -119,13 +131,14 @@ export async function POST(request: NextRequest) {
     console.log("  - 정리된 URL:", cleanUrl)
 
     // Dify API 호출 (서버 사이드에서 실행되므로 CORS 문제 없음)
-    // Dify API는 표준 Bearer 토큰 인증을 사용
-    // 참고: 일부 Dify 서버는 다른 헤더 형식을 요구할 수 있음
+    // 선택된 인증 헤더 형식 사용
     const requestHeaders: Record<string, string> = {
-      "Authorization": authHeader,
       "Content-Type": "application/json",
       "Accept": "application/json",
     }
+    
+    // 선택된 인증 헤더 추가
+    requestHeaders[authHeaderName] = authHeaderValue
     
     // 추가 헤더 (일부 Dify 서버가 요구할 수 있음)
     // User-Agent를 추가하여 일부 서버의 차단을 우회
@@ -134,8 +147,8 @@ export async function POST(request: NextRequest) {
     console.log("[Dify Proxy] ========== 요청 정보 ==========")
     console.log("  - URL:", cleanUrl)
     console.log("  - Method: POST")
-    console.log("  - Authorization 헤더 (마스킹):", authHeader.substring(0, 15) + "..." + authHeader.substring(authHeader.length - 5))
-    console.log("  - Authorization 헤더 전체 길이:", authHeader.length)
+    console.log("  - 인증 헤더 이름:", authHeaderName)
+    console.log("  - 인증 헤더 값 (마스킹):", authHeaderValue.substring(0, 15) + "..." + (authHeaderValue.length > 15 ? authHeaderValue.substring(authHeaderValue.length - 5) : ""))
     console.log("  - Content-Type:", requestHeaders["Content-Type"])
     console.log("  - Accept:", requestHeaders["Accept"])
     console.log("  - User-Agent:", requestHeaders["User-Agent"])
@@ -157,7 +170,7 @@ export async function POST(request: NextRequest) {
     console.log("[Dify Proxy] 응답 본문 길이:", responseText.length)
     console.log("[Dify Proxy] 응답 헤더:", Object.fromEntries(response.headers.entries()))
     console.log("[Dify Proxy] 요청 URL:", cleanUrl)
-    console.log("[Dify Proxy] Authorization 헤더 (마스킹):", authHeader.substring(0, 15) + "..." + authHeader.substring(authHeader.length - 5))
+    console.log("[Dify Proxy] 인증 헤더:", authHeaderName, "=", authHeaderValue.substring(0, 15) + "...")
     console.log("[Dify Proxy] ====================================")
     
     // HTML 응답인지 확인 (Ngrok 경고 페이지 또는 에러 페이지)
@@ -228,14 +241,14 @@ export async function POST(request: NextRequest) {
           console.error("  - API Key 길이:", cleanApiKey.length)
           console.error("  - API Key 시작:", cleanApiKey.substring(0, 10) + "...")
           console.error("  - API Key 끝:", "..." + cleanApiKey.substring(cleanApiKey.length - 5))
-          console.error("  - Authorization 헤더 (마스킹):", authHeader.substring(0, 15) + "..." + authHeader.substring(authHeader.length - 5))
-          console.error("  - Authorization 헤더 전체 길이:", authHeader.length)
+          console.error("  - 인증 헤더 타입:", selectedAuthType)
+          console.error("  - 인증 헤더:", authHeaderName, "=", authHeaderValue.substring(0, 20) + "...")
           console.error("  - Payload:", JSON.stringify(payload, null, 2))
           console.error("  =========================================================")
           
           // 가능한 원인별 상세 메시지
           if (difyErrorMsg.includes("authorization") || difyErrorMsg.includes("bearer") || difyErrorMsg.includes("token") || difyErrorMsg.includes("header")) {
-            errorMessage = "인증 실패: Authorization 헤더가 올바르지 않습니다.\n\n가능한 원인:\n1. API Key 형식이 잘못되었을 수 있습니다\n2. Authorization 헤더 형식이 Dify 서버가 기대하는 것과 다를 수 있습니다\n3. API Key에 보이지 않는 특수문자가 포함되어 있을 수 있습니다\n\n해결 방법:\n1. Dify 대시보드에서 새로운 API Key를 발급받으세요\n2. API Key를 직접 복사-붙여넣기하세요 (수동 입력 금지)\n3. API Key 앞뒤 공백을 확인하세요\n4. Dify 서버가 자체 호스팅인 경우 인증 방식이 다를 수 있습니다"
+            errorMessage = `인증 실패: Authorization 헤더가 올바르지 않습니다.\n\n현재 사용 중인 인증 형식: ${selectedAuthType}\n\n가능한 원인:\n1. API Key 형식이 잘못되었을 수 있습니다\n2. 인증 헤더 형식이 Dify 서버가 기대하는 것과 다를 수 있습니다\n3. API Key에 보이지 않는 특수문자가 포함되어 있을 수 있습니다\n\n해결 방법:\n1. 설정에서 다른 '인증 헤더 형식'을 시도해보세요\n2. Dify 대시보드에서 새로운 API Key를 발급받으세요\n3. API Key를 직접 복사-붙여넣기하세요 (수동 입력 금지)\n4. API Key 앞뒤 공백을 확인하세요`
           } else if (difyErrorMsg.includes("invalid") || difyErrorMsg.includes("expired") || difyErrorMsg.includes("unauthorized") || difyErrorMsg.includes("app unavailable")) {
             errorMessage = "인증 실패: API Key가 올바르지 않거나 앱이 게시되지 않았습니다.\n\n가능한 원인:\n1. API Key가 만료되었거나 삭제되었습니다\n2. Dify 애플리케이션이 '게시(Published)' 상태가 아닙니다\n3. API Key가 다른 애플리케이션에 연결되어 있습니다\n4. 워크플로우가 게시되지 않았습니다\n\n해결 방법:\n1. Dify 대시보드에서 애플리케이션이 '게시' 상태인지 확인하세요\n2. 워크플로우가 게시되었는지 확인하세요\n3. 새로운 API Key를 발급받으세요\n4. API Key가 올바른 애플리케이션에 연결되어 있는지 확인하세요"
           } else if (difyErrorMsg.includes("ip") || difyErrorMsg.includes("domain") || difyErrorMsg.includes("whitelist") || difyErrorMsg.includes("forbidden") || difyErrorMsg.includes("cors")) {

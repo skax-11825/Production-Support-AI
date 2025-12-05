@@ -5,17 +5,21 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Settings, CheckCircle2, XCircle, Eye, EyeOff, Info } from "lucide-react"
+import { Settings, CheckCircle2, XCircle, Eye, EyeOff, Info, ChevronDown, ChevronUp, X } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 // Dify 앱 타입
 export type DifyAppType = "chatbot" | "workflow" | "completion"
+
+// 인증 헤더 타입
+export type AuthHeaderType = "bearer" | "api-key" | "x-api-key"
 
 interface DifyConfig {
   difyApiBase: string
   difyApiKey: string
   apiServerUrl: string
   difyAppType: DifyAppType
+  authHeaderType: AuthHeaderType
 }
 
 interface SettingsDialogProps {
@@ -28,11 +32,13 @@ export function SettingsDialog({ onConfigChange }: SettingsDialogProps) {
     difyApiBase: "",
     difyApiKey: "",
     apiServerUrl: "",
-    difyAppType: "workflow", // 기본값을 workflow로 설정 (사용자의 앱이 workflow 타입이므로)
+    difyAppType: "chatbot", // 기본값을 chatbot으로 설정 (챗플로우 타입)
+    authHeaderType: "bearer", // 기본 인증 방식
   })
   const [apiServerStatus, setApiServerStatus] = useState<{ connected: boolean; message: string } | null>(null)
   const [difyStatus, setDifyStatus] = useState<{ connected: boolean; message: string } | null>(null)
   const [showApiKey, setShowApiKey] = useState(false)
+  const [showErrorDetails, setShowErrorDetails] = useState(false) // 에러 상세 보기
 
   useEffect(() => {
     loadSettings()
@@ -47,7 +53,8 @@ export function SettingsDialog({ onConfigChange }: SettingsDialogProps) {
           difyApiBase: parsed.difyApiBase || "",
           difyApiKey: parsed.difyApiKey || "",
           apiServerUrl: parsed.apiServerUrl || "http://localhost:8000",
-          difyAppType: parsed.difyAppType || "workflow",
+          difyAppType: parsed.difyAppType || "chatbot",
+          authHeaderType: parsed.authHeaderType || "bearer",
         })
       } catch (e) {
         console.error("Failed to load settings:", e)
@@ -226,6 +233,7 @@ export function SettingsDialog({ onConfigChange }: SettingsDialogProps) {
           url: url,
           apiKey: cleanApiKey, // 모든 공백 제거된 API Key 전달
           appType: appType, // 앱 타입 전달
+          authHeaderType: config.authHeaderType || "bearer", // 인증 헤더 타입
           payload: payload,
         }),
       })
@@ -365,6 +373,25 @@ export function SettingsDialog({ onConfigChange }: SettingsDialogProps) {
             <p className="text-xs text-muted-foreground">Dify Chat 애플리케이션에서 발급받은 API Key를 입력하세요</p>
           </div>
 
+          {/* 인증 헤더 타입 선택 */}
+          <div className="space-y-2">
+            <Label htmlFor="authHeaderType">인증 헤더 형식</Label>
+            <Select
+              value={config.authHeaderType}
+              onValueChange={(value: AuthHeaderType) => setConfig({ ...config, authHeaderType: value })}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="인증 헤더 형식 선택" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="bearer">Authorization: Bearer (표준)</SelectItem>
+                <SelectItem value="api-key">Authorization: Api-Key</SelectItem>
+                <SelectItem value="x-api-key">X-Api-Key 헤더</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">인증 실패 시 다른 형식을 시도해보세요</p>
+          </div>
+
           <div className="space-y-2">
             <Label htmlFor="apiServerUrl">API 서버 URL</Label>
             <Input
@@ -398,29 +425,61 @@ export function SettingsDialog({ onConfigChange }: SettingsDialogProps) {
                     </span>
                   </div>
                 ) : (
-                  <span className="text-muted-foreground">확인 중...</span>
+                  <span className="text-muted-foreground">-</span>
                 )}
               </div>
-              <div className="flex items-start justify-between text-sm">
+              <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground shrink-0">Dify 연결:</span>
                 {difyStatus ? (
-                  <div className="flex items-start gap-2 ml-2">
+                  <div className="flex items-center gap-2">
                     {difyStatus.connected ? (
-                      <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0 mt-0.5" />
+                      <CheckCircle2 className="h-4 w-4 text-green-500" />
                     ) : (
-                      <XCircle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
+                      <XCircle className="h-4 w-4 text-red-500" />
                     )}
-                    <span 
-                      className={`${difyStatus.connected ? "text-green-500" : "text-red-500"} text-xs`}
-                      style={{ whiteSpace: "pre-line", wordBreak: "break-word" }}
-                    >
-                      {difyStatus.message}
+                    <span className={difyStatus.connected ? "text-green-500" : "text-red-500"}>
+                      {difyStatus.connected ? "정상" : "연결 실패"}
                     </span>
+                    {/* 에러 상세 보기/숨기기 버튼 */}
+                    {!difyStatus.connected && difyStatus.message && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-2 text-xs"
+                        onClick={() => setShowErrorDetails(!showErrorDetails)}
+                      >
+                        {showErrorDetails ? (
+                          <>숨기기 <ChevronUp className="h-3 w-3 ml-1" /></>
+                        ) : (
+                          <>상세 <ChevronDown className="h-3 w-3 ml-1" /></>
+                        )}
+                      </Button>
+                    )}
                   </div>
                 ) : (
                   <span className="text-muted-foreground">-</span>
                 )}
               </div>
+              
+              {/* 에러 상세 메시지 (접기/펼치기 가능) */}
+              {difyStatus && !difyStatus.connected && showErrorDetails && (
+                <div className="relative mt-2 p-2 rounded bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="absolute top-1 right-1 h-5 w-5"
+                    onClick={() => {
+                      setShowErrorDetails(false)
+                      setDifyStatus(null)
+                    }}
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                  <p className="text-xs text-red-700 dark:text-red-300 pr-6 whitespace-pre-line">
+                    {difyStatus.message}
+                  </p>
+                </div>
+              )}
             </div>
           </div>
 
