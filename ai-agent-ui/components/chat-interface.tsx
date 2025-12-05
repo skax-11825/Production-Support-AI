@@ -227,8 +227,8 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
     <Card className="mx-auto max-w-5xl border-border/50 bg-card">
       <div className="flex h-[600px] flex-col">
         {/* 헤더: 설정 버튼 */}
-        <div className="flex items-center justify-between border-b border-border/50 p-4">
-          <h3 className="text-sm font-medium text-muted-foreground">
+        <div className="flex items-center justify-between border-b border-border/50 px-4 py-2">
+          <h3 className="text-lg font-bold text-foreground">
             {agentType === "state-chase" ? "State Chase Agent" : "Error Lense Agent"}
           </h3>
           <SettingsDialog 
