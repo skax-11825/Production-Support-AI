@@ -15,16 +15,14 @@ interface DifyConfig {
   apiServerUrl: string
 }
 
-// 에이전트별 기본 설정
-const DEFAULT_CONFIGS: Record<AgentType, { apiKey: string; baseUrl: string }> = {
-  "error-lense": {
-    apiKey: "app-hKVB2xN9C5deXeavB9SAfkRo",
-    baseUrl: "https://ai-platform-deploy.koreacentral.cloudapp.azure.com:3000/v1",
-  },
-  "lot-scheduling": {
-    apiKey: "app-rzR04Xc0vdXlhXaHN6XXqXPr",  // State Chase (LOT Scheduling)
-    baseUrl: "https://ai-platform-deploy.koreacentral.cloudapp.azure.com:3000/v1",
-  },
+// 공통 기본 설정
+const DEFAULT_BASE_URL = "https://ai-platform-deploy.koreacentral.cloudapp.azure.com:3000/v1"
+const DEFAULT_NGROK_URL = "https://youlanda-unconciliatory-unmirthfully.ngrok-free.dev"
+
+// 에이전트별 기본 API Key
+const DEFAULT_API_KEYS: Record<AgentType, string> = {
+  "error-lense": "app-hKVB2xN9C5deXeavB9SAfkRo",
+  "lot-scheduling": "app-rzR04Xc0vdXlhXaHN6XXqXPr",  // State Chase
 }
 
 interface SettingsDialogProps {
@@ -34,13 +32,13 @@ interface SettingsDialogProps {
 
 export function SettingsDialog({ agentType, onConfigChange }: SettingsDialogProps) {
   const storageKey = `difyConfig_${agentType}`
-  const defaultConfig = DEFAULT_CONFIGS[agentType]
+  const defaultApiKey = DEFAULT_API_KEYS[agentType]
   
   const [open, setOpen] = useState(false)
   const [config, setConfig] = useState<DifyConfig>({
-    difyApiBase: defaultConfig.baseUrl,
-    difyApiKey: defaultConfig.apiKey,
-    apiServerUrl: "",
+    difyApiBase: DEFAULT_BASE_URL,
+    difyApiKey: defaultApiKey,
+    apiServerUrl: DEFAULT_NGROK_URL,
   })
   const [apiServerStatus, setApiServerStatus] = useState<{ connected: boolean; message: string } | null>(null)
   const [difyStatus, setDifyStatus] = useState<{ connected: boolean; message: string } | null>(null)
@@ -56,10 +54,11 @@ export function SettingsDialog({ agentType, onConfigChange }: SettingsDialogProp
     if (saved) {
       try {
         const parsed = JSON.parse(saved)
+        // 저장된 값이 빈 문자열이면 기본값 사용
         setConfig({
-          difyApiBase: parsed.difyApiBase || defaultConfig.baseUrl,
-          difyApiKey: parsed.difyApiKey || defaultConfig.apiKey,
-          apiServerUrl: parsed.apiServerUrl || "",
+          difyApiBase: parsed.difyApiBase || DEFAULT_BASE_URL,
+          difyApiKey: parsed.difyApiKey || defaultApiKey,
+          apiServerUrl: parsed.apiServerUrl || DEFAULT_NGROK_URL,
         })
       } catch (e) {
         console.error("Failed to load settings:", e)
@@ -67,9 +66,9 @@ export function SettingsDialog({ agentType, onConfigChange }: SettingsDialogProp
     } else {
       // 저장된 설정이 없으면 기본값 저장
       const newConfig = {
-        difyApiBase: defaultConfig.baseUrl,
-        difyApiKey: defaultConfig.apiKey,
-        apiServerUrl: "",
+        difyApiBase: DEFAULT_BASE_URL,
+        difyApiKey: defaultApiKey,
+        apiServerUrl: DEFAULT_NGROK_URL,
       }
       setConfig(newConfig)
       localStorage.setItem(storageKey, JSON.stringify(newConfig))

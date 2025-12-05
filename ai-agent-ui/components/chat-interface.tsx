@@ -24,16 +24,14 @@ interface DifyConfig {
   apiServerUrl: string
 }
 
-// 에이전트별 기본 설정
-const DEFAULT_CONFIGS: Record<AgentType, { apiKey: string; baseUrl: string }> = {
-  "error-lense": {
-    apiKey: "app-hKVB2xN9C5deXeavB9SAfkRo",
-    baseUrl: "https://ai-platform-deploy.koreacentral.cloudapp.azure.com:3000/v1",
-  },
-  "lot-scheduling": {
-    apiKey: "app-rzR04Xc0vdXlhXaHN6XXqXPr",  // State Chase (LOT Scheduling)
-    baseUrl: "https://ai-platform-deploy.koreacentral.cloudapp.azure.com:3000/v1",
-  },
+// 공통 기본 설정
+const DEFAULT_BASE_URL = "https://ai-platform-deploy.koreacentral.cloudapp.azure.com:3000/v1"
+const DEFAULT_NGROK_URL = "https://youlanda-unconciliatory-unmirthfully.ngrok-free.dev"
+
+// 에이전트별 기본 API Key
+const DEFAULT_API_KEYS: Record<AgentType, string> = {
+  "error-lense": "app-hKVB2xN9C5deXeavB9SAfkRo",
+  "lot-scheduling": "app-rzR04Xc0vdXlhXaHN6XXqXPr",  // State Chase
 }
 
 export function ChatInterface({ agentType }: ChatInterfaceProps) {
@@ -61,32 +59,33 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
   }, [agentType])
 
   const loadConfig = () => {
-    const defaultConfig = DEFAULT_CONFIGS[agentType]
+    const defaultApiKey = DEFAULT_API_KEYS[agentType]
     const saved = localStorage.getItem(storageKey)
     
     if (saved) {
       try {
         const parsed = JSON.parse(saved)
+        // 저장된 값이 빈 문자열이면 기본값 사용
         setConfig({
-          difyApiBase: parsed.difyApiBase || defaultConfig.baseUrl,
-          difyApiKey: parsed.difyApiKey || defaultConfig.apiKey,
-          apiServerUrl: parsed.apiServerUrl || "",
+          difyApiBase: parsed.difyApiBase || DEFAULT_BASE_URL,
+          difyApiKey: parsed.difyApiKey || defaultApiKey,
+          apiServerUrl: parsed.apiServerUrl || DEFAULT_NGROK_URL,
         })
       } catch (e) {
         console.error("Failed to load config:", e)
         // 파싱 실패 시 기본값 사용
         setConfig({
-          difyApiBase: defaultConfig.baseUrl,
-          difyApiKey: defaultConfig.apiKey,
-          apiServerUrl: "",
+          difyApiBase: DEFAULT_BASE_URL,
+          difyApiKey: defaultApiKey,
+          apiServerUrl: DEFAULT_NGROK_URL,
         })
       }
     } else {
       // 저장된 설정이 없으면 기본값으로 초기화하고 저장
       const newConfig = {
-        difyApiBase: defaultConfig.baseUrl,
-        difyApiKey: defaultConfig.apiKey,
-        apiServerUrl: "",
+        difyApiBase: DEFAULT_BASE_URL,
+        difyApiKey: defaultApiKey,
+        apiServerUrl: DEFAULT_NGROK_URL,
       }
       setConfig(newConfig)
       localStorage.setItem(storageKey, JSON.stringify(newConfig))
