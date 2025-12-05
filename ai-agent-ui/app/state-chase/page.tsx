@@ -14,7 +14,7 @@ export default function StateChaseAgentPage() {
           </div>
           <h1 className="mb-4 text-5xl font-semibold tracking-tight sm:text-6xl">State Chase Agent</h1>
           <p className="mx-auto max-w-2xl text-balance text-lg leading-relaxed text-muted-foreground">
-            AI-powered production scheduling and resource optimization for semiconductor manufacturing
+          실시간 생산•설비 데이터를 기반 비어있는 설비 조회, 작업 우선순위 추천, 원인 분석을 수행하는 제조용 AI 에이전트
           </p>
         </div>
 
@@ -23,9 +23,9 @@ export default function StateChaseAgentPage() {
             <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500/20 to-cyan-500/20">
               <Target className="h-5 w-5 text-blue-600 dark:text-blue-400" />
             </div>
-            <h3 className="mb-2 font-semibold">Smart Scheduling</h3>
+            <h3 className="mb-2 font-semibold">RECOMMEND</h3>
             <p className="text-sm leading-relaxed text-muted-foreground">
-              Optimize production schedules with AI-driven resource allocation
+              특정 제품이나 공정을 처리할 수 있는 설비와 대체 설비를 조회
             </p>
           </Card>
 
@@ -33,9 +33,9 @@ export default function StateChaseAgentPage() {
             <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500/20 to-teal-500/20">
               <BarChart3 className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
             </div>
-            <h3 className="mb-2 font-semibold">Real-time Analytics</h3>
+            <h3 className="mb-2 font-semibold">PRIORITY</h3>
             <p className="text-sm leading-relaxed text-muted-foreground">
-              Monitor production states and identify bottlenecks instantly
+              특정 설비에 투입할 항목이나 샘플로 전환 가능한 항목의 우선순위를 추천
             </p>
           </Card>
 
@@ -43,9 +43,9 @@ export default function StateChaseAgentPage() {
             <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-purple-500/20 to-pink-500/20">
               <Zap className="h-5 w-5 text-purple-600 dark:text-purple-400" />
             </div>
-            <h3 className="mb-2 font-semibold">Predictive Insights</h3>
+            <h3 className="mb-2 font-semibold">ANALYSIS</h3>
             <p className="text-sm leading-relaxed text-muted-foreground">
-              Forecast production delays and optimize resource utilization
+              중단된 설비를 확인하고, 작업이 진행되지 않는 원인을 분석
             </p>
           </Card>
         </div>

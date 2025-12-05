@@ -9,7 +9,7 @@ export function AgentNavigation() {
       icon: TrendingUp,
       title: "State Chase Agent",
       description:
-        "Optimize production scheduling with AI-powered lot planning and resource allocation for maximum efficiency.",
+        "실시간 생산•설비 데이터를 기반으로 설비 조회, 작업 우선순위 추천, 원인 분석을 수행하는 제조용 AI 에이전트",
       href: "/state-chase",
       hoverColor: "from-blue-500/20 to-purple-500/20",
       iconGradient: "from-blue-500 to-purple-600",
@@ -17,9 +17,9 @@ export function AgentNavigation() {
     },
     {
       icon: AlertCircle,
-      title: "Error Lense",
+      title: "Error Lense Agent",
       description:
-        "Real-time error detection and resolution with intelligent root cause analysis and automated troubleshooting.",
+        "장비 에러 및 작업 이력을 통합 분석해 엔지니어에게 즉각적으로 에러 원인 및 조치 방안에 대한 인사이트를 제공하는 AI 에이전트",
       href: "/error-lense",
       hoverColor: "from-orange-500/20 to-red-500/20",
       iconGradient: "from-orange-500 to-red-600",
@@ -60,7 +60,7 @@ export function AgentNavigation() {
 
                   <Link href={agent.href}>
                     <Button className="group/btn w-full rounded-full">
-                      Launch Agent
+                      Agent 시작
                       <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover/btn:translate-x-1" />
                     </Button>
                   </Link>

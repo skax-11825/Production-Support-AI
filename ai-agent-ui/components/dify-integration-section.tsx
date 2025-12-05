@@ -20,11 +20,10 @@ export function DifyIntegrationSection() {
 
         <div className="mb-16 text-center">
           <h2 className="mb-4 text-4xl font-semibold tracking-tight sm:text-5xl">
-            Seamlessly Connected to M-axis & Dify
+            M-axis 플랫폼과 Dify의 자유로운 연동
           </h2>
           <p className="mx-auto max-w-2xl text-balance text-lg leading-relaxed text-muted-foreground">
-            Built on SK AX's M-axis manufacturing platform with Dify's powerful AI orchestration, providing a unified
-            experience for building and deploying intelligent production agents.
+            제조 표준 AI 플랫폼 'M-axis'와 Dify의 통합으로 다양한 제조 솔루션을 제공합니다.
           </p>
         </div>
 
@@ -49,9 +48,9 @@ export function DifyIntegrationSection() {
             <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500/20 to-teal-500/20 text-emerald-600 dark:text-emerald-400">
               <Workflow className="h-5 w-5" />
             </div>
-            <h3 className="mb-2 font-semibold">Workflow Engine</h3>
+            <h3 className="mb-2 font-semibold">Dify Workflow</h3>
             <p className="text-sm leading-relaxed text-muted-foreground">
-              Leverage Dify's visual workflow builder for custom error handling logic
+              Dify의 워크플로우 빌더를 사용하여 다양한 제조 솔루션을 구축합니다.
             </p>
           </Card>
 
@@ -59,9 +58,9 @@ export function DifyIntegrationSection() {
             <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500/20 to-cyan-500/20 text-blue-600 dark:text-blue-400">
               <Database className="h-5 w-5" />
             </div>
-            <h3 className="mb-2 font-semibold">Knowledge Base</h3>
+            <h3 className="mb-2 font-semibold">지식 기반 서비스</h3>
             <p className="text-sm leading-relaxed text-muted-foreground">
-              Connect to Dify's knowledge management for context-aware responses
+              자연어 질의응답을 위한 지식 기반 서비스를 제공합니다.
             </p>
           </Card>
 
@@ -69,9 +68,9 @@ export function DifyIntegrationSection() {
             <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-purple-500/20 to-pink-500/20 text-purple-600 dark:text-purple-400">
               <MessageSquare className="h-5 w-5" />
             </div>
-            <h3 className="mb-2 font-semibold">LLM Models</h3>
+            <h3 className="mb-2 font-semibold">LLM 기반의 에이전트</h3>
             <p className="text-sm leading-relaxed text-muted-foreground">
-              Access multiple AI models through Dify's unified API gateway
+              API 호출을 통해 다양한 LLM 기반의 에이전트를 사용할 수 있습니다.
             </p>
           </Card>
         </div>
