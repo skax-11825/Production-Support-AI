@@ -144,10 +144,7 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
       
       // 네트워크 오류 상세 정보
       if (error instanceof TypeError && error.message.includes("fetch")) {
-        if (url.startsWith("http://") && window.location.protocol === "https:") {
-          throw new Error("Mixed Content 오류: HTTPS 페이지에서 HTTP 리소스에 접근할 수 없습니다. Dify API URL을 HTTPS로 변경하세요.")
-        }
-        throw new Error(`네트워크 오류: ${error.message}. CORS 또는 네트워크 연결을 확인하세요.`)
+        throw new Error(`네트워크 오류: ${error.message}. 프록시 서버 연결을 확인하세요.`)
       }
       
       throw error

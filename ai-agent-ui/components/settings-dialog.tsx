@@ -59,16 +59,8 @@ export function SettingsDialog({ onConfigChange }: SettingsDialogProps) {
       const cleanedUrl = config.apiServerUrl.trim().replace(/[,;]$/, "")
       console.log("[API Server] 상태 확인:", cleanedUrl)
       
-      // Mixed Content 체크
-      if (cleanedUrl.startsWith("http://") && window.location.protocol === "https:") {
-        setApiServerStatus({
-          connected: false,
-          message: "Mixed Content 오류: HTTPS 페이지에서 HTTP 리소스 접근 불가. Ngrok URL(HTTPS)을 사용하세요.",
-        })
-        return
-      }
-      
-      // 프록시를 통해 요청 (CORS 문제 해결)
+      // 프록시를 통해 요청 (CORS 및 Mixed Content 문제 해결)
+      // 프록시는 서버 사이드에서 실행되므로 HTTP/HTTPS 모두 가능
       const response = await fetch(`/api/health?url=${encodeURIComponent(cleanedUrl)}`)
       console.log("[API Server] 응답 상태:", response.status)
       
@@ -122,16 +114,8 @@ export function SettingsDialog({ onConfigChange }: SettingsDialogProps) {
       const url = `${config.difyApiBase}/chat-messages`
       console.log("[Dify] 연결 테스트:", url)
       
-      // Mixed Content 체크
-      if (url.startsWith("http://") && window.location.protocol === "https:") {
-        setDifyStatus({
-          connected: false,
-          message: "Mixed Content 오류: HTTPS 페이지에서 HTTP 리소스 접근 불가. Dify URL을 HTTPS로 변경하세요.",
-        })
-        return
-      }
-      
-      // 프록시를 통해 요청 (CORS 문제 해결)
+      // 프록시를 통해 요청 (CORS 및 Mixed Content 문제 해결)
+      // 프록시는 서버 사이드에서 실행되므로 HTTP/HTTPS 모두 가능
       const response = await fetch("/api/dify", {
         method: "POST",
         headers: {
