@@ -55,17 +55,53 @@ export function SettingsDialog({ onConfigChange }: SettingsDialogProps) {
 
   const checkApiServerStatus = async () => {
     try {
-      const response = await fetch(`${config.apiServerUrl}/health`)
-      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      // URL 정리 (공백, 쉼표 제거)
+      const cleanedUrl = config.apiServerUrl.trim().replace(/[,;]$/, "")
+      console.log("[API Server] 상태 확인:", cleanedUrl)
+      
+      // Mixed Content 체크
+      if (cleanedUrl.startsWith("http://") && window.location.protocol === "https:") {
+        setApiServerStatus({
+          connected: false,
+          message: "Mixed Content 오류: HTTPS 페이지에서 HTTP 리소스 접근 불가. Ngrok URL(HTTPS)을 사용하세요.",
+        })
+        return
+      }
+      
+      // 프록시를 통해 요청 (CORS 문제 해결)
+      const response = await fetch(`/api/health?url=${encodeURIComponent(cleanedUrl)}`)
+      console.log("[API Server] 응답 상태:", response.status)
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: "Unknown error" }))
+        throw new Error(errorData.error || `HTTP ${response.status}`)
+      }
+      
       const data = await response.json()
+      
+      // 프록시에서 오류가 있으면
+      if (data.error) {
+        throw new Error(data.error)
+      }
       setApiServerStatus({
         connected: data.status === "healthy",
         message: data.status === "healthy" ? "정상" : "비정상",
       })
     } catch (error) {
+      console.error("[API Server] 오류:", error)
+      
+      let errorMessage = error instanceof Error ? error.message : "알 수 없는 오류"
+      
+      // 네트워크 오류 상세화
+      if (error instanceof TypeError) {
+        if (error.message.includes("Failed to fetch")) {
+          errorMessage = "네트워크 오류: CORS 또는 연결 문제. Ngrok URL이 올바른지 확인하세요."
+        }
+      }
+      
       setApiServerStatus({
         connected: false,
-        message: `연결 실패: ${error instanceof Error ? error.message : "알 수 없는 오류"}`,
+        message: `연결 실패: ${errorMessage}`,
       })
     }
   }
@@ -76,32 +112,74 @@ export function SettingsDialog({ onConfigChange }: SettingsDialogProps) {
       return
     }
 
+    if (!config.difyApiBase) {
+      setDifyStatus({ connected: false, message: "Dify API Base URL이 설정되지 않았습니다." })
+      return
+    }
+
     try {
-      const url = `${config.difyApiBase}/chat-messages`
-      const response = await fetch(url, {
+      // URL 정리 (공백, 쉼표 제거, 끝의 슬래시 제거)
+      const cleanedBase = config.difyApiBase.trim().replace(/[,;]$/, "").replace(/\/$/, "")
+      const url = `${cleanedBase}/chat-messages`
+      console.log("[Dify] 연결 테스트:", url)
+      
+      // Mixed Content 체크
+      if (url.startsWith("http://") && window.location.protocol === "https:") {
+        setDifyStatus({
+          connected: false,
+          message: "Mixed Content 오류: HTTPS 페이지에서 HTTP 리소스 접근 불가. Dify URL을 HTTPS로 변경하세요.",
+        })
+        return
+      }
+      
+      // 프록시를 통해 요청 (CORS 문제 해결)
+      const response = await fetch("/api/dify", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${config.difyApiKey}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          inputs: {},
-          query: "테스트",
-          response_mode: "blocking",
-          user: "web-ui-user",
+          url: url,
+          apiKey: config.difyApiKey,
+          payload: {
+            inputs: {},
+            query: "테스트",
+            response_mode: "blocking",
+            user: "web-ui-user",
+          },
         }),
       })
 
+      console.log("[Dify] 응답 상태:", response.status)
+
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        throw new Error(errorData.message || `HTTP ${response.status}`)
+        const errorData = await response.json().catch(() => ({ error: "Unknown error" }))
+        throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`)
+      }
+
+      const data = await response.json()
+      
+      // 프록시에서 오류가 있으면
+      if (data.error) {
+        throw new Error(data.error)
       }
 
       setDifyStatus({ connected: true, message: "연결 성공" })
     } catch (error) {
+      console.error("[Dify] 예외:", error)
+      
+      let errorMessage = error instanceof Error ? error.message : "연결 실패"
+      
+      // 네트워크 오류 상세화
+      if (error instanceof TypeError) {
+        if (error.message.includes("Failed to fetch")) {
+          errorMessage = "네트워크 오류: CORS 문제 또는 연결 실패. Dify 서버의 CORS 설정을 확인하세요. (자체 호스팅 Dify인 경우 CORS 허용 필요)"
+        }
+      }
+      
       setDifyStatus({
         connected: false,
-        message: error instanceof Error ? error.message : "연결 실패",
+        message: errorMessage,
       })
     }
   }

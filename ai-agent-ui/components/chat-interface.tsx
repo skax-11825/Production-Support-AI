@@ -70,7 +70,9 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
       throw new Error("Dify API 설정이 완료되지 않았습니다. 설정 버튼을 클릭하여 API Key를 입력하세요.")
     }
 
-    const url = `${config.difyApiBase}/chat-messages`
+    // URL 정리 (공백, 쉼표 제거, 끝의 슬래시 제거)
+    const cleanedBase = config.difyApiBase.trim().replace(/[,;]$/, "").replace(/\/$/, "")
+    const url = `${cleanedBase}/chat-messages`
     const payload = {
       inputs: {},
       query: message,
@@ -79,28 +81,70 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
       user: "web-ui-user",
     }
 
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${config.difyApiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    })
+    console.log("[Dify API] 요청 시작:", { url, hasKey: !!config.difyApiKey })
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}))
-      throw new Error(errorData.message || errorData.error || `HTTP ${response.status}: ${response.statusText}`)
+    try {
+      // 프록시를 통해 요청 (CORS 문제 해결)
+      const response = await fetch("/api/dify", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          url: url,
+          apiKey: config.difyApiKey,
+          payload: payload,
+        }),
+      })
+
+      console.log("[Dify API] 응답 상태:", response.status, response.statusText)
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error("[Dify API] 오류 응답 텍스트:", errorText.substring(0, 200))
+        
+        // HTML 응답인지 확인
+        if (errorText.trim().startsWith("<!DOCTYPE") || errorText.trim().startsWith("<html")) {
+          throw new Error("Dify 서버에서 HTML 페이지를 반환했습니다. URL이 올바른지 확인하세요.")
+        }
+        
+        try {
+          const errorData = JSON.parse(errorText)
+          const errorMessage = errorData.message || errorData.error || `HTTP ${response.status}: ${response.statusText}`
+          console.error("[Dify API] 오류:", errorMessage, errorData)
+          throw new Error(errorMessage)
+        } catch (parseError) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+        }
+      }
+
+      const data = await response.json()
+      
+      // 프록시에서 오류가 있으면
+      if (data.error) {
+        throw new Error(data.error)
+      }
+      console.log("[Dify API] 응답 성공:", { hasAnswer: !!data.answer, hasConversationId: !!data.conversation_id })
+      
+      // conversation_id 저장
+      if (data.conversation_id) {
+        setConversationId(data.conversation_id)
+      }
+
+      return data.answer || "응답을 받을 수 없습니다."
+    } catch (error) {
+      console.error("[Dify API] 예외 발생:", error)
+      
+      // 네트워크 오류 상세 정보
+      if (error instanceof TypeError && error.message.includes("fetch")) {
+        if (url.startsWith("http://") && window.location.protocol === "https:") {
+          throw new Error("Mixed Content 오류: HTTPS 페이지에서 HTTP 리소스에 접근할 수 없습니다. Dify API URL을 HTTPS로 변경하세요.")
+        }
+        throw new Error(`네트워크 오류: ${error.message}. CORS 또는 네트워크 연결을 확인하세요.`)
+      }
+      
+      throw error
     }
-
-    const data = await response.json()
-    
-    // conversation_id 저장
-    if (data.conversation_id) {
-      setConversationId(data.conversation_id)
-    }
-
-    return data.answer || "응답을 받을 수 없습니다."
   }
 
   const handleSend = async () => {
@@ -197,7 +241,7 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
               {isLoading ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
-                <Send className="h-4 w-4" />
+              <Send className="h-4 w-4" />
               )}
             </Button>
           </div>
