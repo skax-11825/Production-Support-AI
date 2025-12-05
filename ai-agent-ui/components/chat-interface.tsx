@@ -18,17 +18,10 @@ interface ChatInterfaceProps {
   agentType: AgentType
 }
 
-type DifyAppType = "chatbot" | "workflow" | "completion"
-type AuthHeaderType = "bearer" | "api-key" | "x-api-key"
-type ProxyMode = "vercel" | "ngrok"
-
 interface DifyConfig {
   difyApiBase: string
   difyApiKey: string
   apiServerUrl: string
-  difyAppType: DifyAppType
-  authHeaderType: AuthHeaderType
-  proxyMode: ProxyMode
 }
 
 export function ChatInterface({ agentType }: ChatInterfaceProps) {
@@ -60,10 +53,7 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
         setConfig({
           difyApiBase: parsed.difyApiBase || "",
           difyApiKey: parsed.difyApiKey || "",
-          apiServerUrl: parsed.apiServerUrl || "http://localhost:8000",
-          difyAppType: parsed.difyAppType || "chatbot",
-          authHeaderType: parsed.authHeaderType || "bearer",
-          proxyMode: parsed.proxyMode || "ngrok",
+          apiServerUrl: parsed.apiServerUrl || "",
         })
       } catch (e) {
         console.error("Failed to load config:", e)
@@ -77,87 +67,47 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
 
   const sendMessageToDify = async (message: string): Promise<string> => {
     if (!config || !config.difyApiKey || !config.difyApiBase) {
-      throw new Error("Dify API 설정이 완료되지 않았습니다. 설정 버튼을 클릭하여 API Key를 입력하세요.")
+      throw new Error("Dify API 설정이 완료되지 않았습니다. 설정 버튼을 클릭하여 설정을 완료하세요.")
     }
 
-    // API Key 검증 및 정리
-    // 모든 종류의 공백 문자 제거 (공백, 탭, 줄바꿈 등)
-    const rawApiKey = (config.difyApiKey || "").toString()
-    const trimmedApiKey = rawApiKey.trim()
-    const cleanApiKey = trimmedApiKey.replace(/\s+/g, "") // 모든 공백 제거
-    
-    if (!trimmedApiKey || !cleanApiKey) {
-      throw new Error("API Key가 비어있습니다. 설정에서 API Key를 입력하세요.")
+    if (!config.apiServerUrl) {
+      throw new Error("API 서버 URL(Ngrok)이 설정되지 않았습니다. 설정에서 Ngrok URL을 입력하세요.")
     }
 
-    // URL 정리 및 검증
-    let baseUrl = (config.difyApiBase || "").trim()
+    // API Key 정리
+    const cleanApiKey = config.difyApiKey.trim().replace(/\s+/g, "")
     
-    // 끝의 쉼표, 세미콜론, 공백 제거
-    baseUrl = baseUrl.replace(/[,;\s]+$/, "")
-    
-    // 끝의 슬래시 제거
-    baseUrl = baseUrl.replace(/\/+$/, "")
-    
-    // /v1 경로가 없으면 자동 추가 (일부 Dify 서버는 /v1이 필요함)
-    // 단, 포트 번호가 있거나 이미 경로가 있으면 그대로 사용
-    if (!baseUrl.match(/\/v\d+$/) && !baseUrl.match(/:\d+\//)) {
-      // 포트 번호가 있고 경로가 없는 경우에만 /v1 추가
-      if (baseUrl.match(/:\d+$/)) {
-        baseUrl = `${baseUrl}/v1`
-      } else if (!baseUrl.includes("/", 8)) { // 프로토콜 부분 이후에 슬래시가 없으면
-        baseUrl = `${baseUrl}/v1`
-      }
-    }
-    
-    // 앱 타입에 따른 엔드포인트 결정
-    const appType = config.difyAppType || "workflow"
-    let endpoint = "/chat-messages"
-    if (appType === "workflow") {
-      endpoint = "/workflows/run"
-    } else if (appType === "completion") {
-      endpoint = "/completion-messages"
-    }
-    
-    const url = `${baseUrl}${endpoint}`
-    
-    // 앱 타입에 따른 payload 구성
-    let payload: Record<string, unknown>
-    if (appType === "workflow") {
-      // 워크플로우 앱은 다른 payload 형식 사용
-      // 워크플로우의 inputs에 query 변수가 정의되어 있어야 함
-      payload = {
-        inputs: { query: message },
-        response_mode: "blocking",
-        user: "web-ui-user",
-      }
-    } else {
-      // Chatbot/Completion 앱
-      payload = {
-        inputs: {},
-        query: message,
-        response_mode: "blocking",
-        conversation_id: conversationId,
-        user: "web-ui-user",
-      }
+    if (!cleanApiKey) {
+      throw new Error("API Key가 비어있습니다.")
     }
 
-    console.log("[Dify API] 요청 시작:", { url, appType, hasKey: !!cleanApiKey, keyLength: cleanApiKey.length })
+    // URL 정리 - 끝의 슬래시, 쉼표 등 제거
+    let baseUrl = config.difyApiBase.trim().replace(/[,;\s\/]+$/, "")
+    
+    // /v1이 없으면 추가
+    if (!baseUrl.match(/\/v\d+$/)) {
+      baseUrl = `${baseUrl}/v1`
+    }
+    
+    // 챗봇 엔드포인트 (고정)
+    const url = `${baseUrl}/chat-messages`
+    
+    // 챗봇 페이로드 (고정)
+    const payload = {
+      inputs: {},
+      query: message,
+      response_mode: "blocking",
+      conversation_id: conversationId || "",
+      user: "web-ui-user",
+    }
+
+    // Ngrok 프록시 URL (고정)
+    const ngrokUrl = config.apiServerUrl.trim().replace(/\/+$/, "")
+    const proxyUrl = `${ngrokUrl}/proxy/dify`
+
+    console.log("[Dify API] 요청:", { url, proxyUrl })
 
     try {
-      // 프록시 모드에 따라 다른 URL 사용
-      const proxyMode = config.proxyMode || "ngrok"
-      let proxyUrl = "/api/dify" // Vercel 프록시 (기본)
-      
-      if (proxyMode === "ngrok" && config.apiServerUrl) {
-        // Ngrok 프록시: 로컬 서버를 통해 Dify에 접근 (한국 IP 사용)
-        const ngrokUrl = config.apiServerUrl.trim().replace(/\/+$/, "")
-        proxyUrl = `${ngrokUrl}/proxy/dify`
-        console.log("[Dify API] Ngrok 프록시 사용:", proxyUrl)
-      } else {
-        console.log("[Dify API] Vercel 프록시 사용")
-      }
-      
       const response = await fetch(proxyUrl, {
         method: "POST",
         headers: {
@@ -165,88 +115,40 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
         },
         body: JSON.stringify({
           url: url,
-          apiKey: cleanApiKey, // 모든 공백 제거된 API Key 전달
-          appType: appType, // 앱 타입 전달
-          authHeaderType: config.authHeaderType || "bearer", // 인증 헤더 타입
+          apiKey: cleanApiKey,
+          appType: "chatbot",  // 고정
+          authHeaderType: "bearer",  // 고정
           payload: payload,
         }),
       })
 
-      console.log("[Dify API] 응답 상태:", response.status, response.statusText)
-
-      // 응답 본문을 텍스트로 먼저 읽기
       const responseText = await response.text()
       
       if (!response.ok) {
-        let errorMessage = `HTTP ${response.status}: ${response.statusText}`
+        let errorMessage = `HTTP ${response.status}`
         try {
           const errorData = JSON.parse(responseText)
           errorMessage = errorData.error || errorData.message || errorMessage
         } catch {
-          // JSON 파싱 실패 시 텍스트 그대로 사용
-          if (responseText.trim().startsWith("<!DOCTYPE") || responseText.trim().startsWith("<html")) {
-            errorMessage = "Dify 서버에서 HTML 페이지를 반환했습니다. URL이 올바른지 확인하세요."
-          } else {
-            errorMessage = responseText.substring(0, 200) || errorMessage
-          }
+          errorMessage = responseText.substring(0, 200) || errorMessage
         }
-        console.error("[Dify API] 오류:", errorMessage)
         throw new Error(errorMessage)
       }
 
-      // 성공 응답 파싱
-      let data
-      try {
-        data = JSON.parse(responseText)
-      } catch (parseError) {
-        console.error("[Dify API] JSON 파싱 실패:", parseError)
-        throw new Error("서버에서 유효하지 않은 응답을 받았습니다.")
-      }
+      const data = JSON.parse(responseText)
       
-      // 프록시에서 오류가 있으면
       if (data.error) {
         throw new Error(data.error)
       }
-      console.log("[Dify API] 응답 성공:", { 
-        hasAnswer: !!data.answer, 
-        hasOutputs: !!data.outputs, 
-        hasConversationId: !!data.conversation_id 
-      })
-      
-      // conversation_id 저장 (chatbot 앱인 경우)
+
+      // conversation_id 저장
       if (data.conversation_id) {
         setConversationId(data.conversation_id)
       }
 
-      // 워크플로우 응답 처리
-      if (appType === "workflow") {
-        // 워크플로우 응답은 data.outputs에 결과가 있음
-        if (data.outputs) {
-          // outputs에서 텍스트 응답 추출 (일반적인 출력 변수명들)
-          const output = data.outputs.text || 
-                        data.outputs.answer || 
-                        data.outputs.result || 
-                        data.outputs.output ||
-                        data.outputs.response ||
-                        JSON.stringify(data.outputs)
-          return output
-        }
-        // data 자체에 answer가 있을 수도 있음
-        if (data.answer) {
-          return data.answer
-        }
-        return data.data?.outputs?.text || data.data?.answer || "워크플로우 응답을 처리할 수 없습니다."
-      }
-
       return data.answer || "응답을 받을 수 없습니다."
     } catch (error) {
-      console.error("[Dify API] 예외 발생:", error)
-      
-      // 네트워크 오류 상세 정보
-      if (error instanceof TypeError && error.message.includes("fetch")) {
-        throw new Error(`네트워크 오류: ${error.message}. 프록시 서버 연결을 확인하세요.`)
-      }
-      
+      console.error("[Dify API] 오류:", error)
       throw error
     }
   }
@@ -261,7 +163,6 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
     setIsLoading(true)
 
     try {
-      // Dify API 호출
       const response = await sendMessageToDify(currentInput)
       const aiMessage: Message = {
         role: "assistant",
