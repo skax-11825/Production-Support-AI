@@ -22,7 +22,7 @@ const DEFAULT_NGROK_URL = "https://youlanda-unconciliatory-unmirthfully.ngrok-fr
 // 에이전트별 기본 API Key
 const DEFAULT_API_KEYS: Record<AgentType, string> = {
   "error-lense": "app-hKVB2xN9C5deXeavB9SAfkRo",
-  "state-chase": "app-rzR04Xc0vdXlhXaHN6XXqXPr",  // State Chase
+  "state-chase": "app-rzR04Xc0vdXlhXaHN6XXqXPr",
 }
 
 interface SettingsDialogProps {
@@ -31,8 +31,8 @@ interface SettingsDialogProps {
 }
 
 export function SettingsDialog({ agentType, onConfigChange }: SettingsDialogProps) {
-  // 에이전트별 localStorage 키 (v2: 기본값 포함 버전)
-  const storageKey = `difyConfig_v2_${agentType}`
+  // 에이전트별 localStorage 키 (v3: State Chase API 키 변경)
+  const storageKey = `difyConfig_v3_${agentType}`
   const defaultApiKey = DEFAULT_API_KEYS[agentType]
   
   const [open, setOpen] = useState(false)

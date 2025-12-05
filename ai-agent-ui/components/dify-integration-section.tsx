@@ -6,24 +6,21 @@ export function DifyIntegrationSection() {
   return (
     <section id="integration" className="border-y border-border/40 bg-secondary/30 py-32">
       <div className="container mx-auto px-6">
-        <div className="mb-8 flex items-center justify-center gap-4">
-          <span className="text-4xl font-bold tracking-tight text-foreground">M-axis</span>
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 shadow-lg">
-            <Link2 className="h-5 w-5 text-white" />
+        <div className="mb-12 flex items-center justify-center gap-4">
+          <span className="text-5xl font-bold tracking-tight text-foreground">M-axis</span>
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 shadow-lg">
+            <Link2 className="h-6 w-6 text-white" />
           </div>
           <Image 
             src="/dify.png" 
             alt="Dify" 
-            width={100} 
-            height={40} 
-            className="h-10 w-auto object-contain" 
+            width={130} 
+            height={52} 
+            className="h-13 w-auto object-contain" 
           />
         </div>
 
         <div className="mb-16 text-center">
-          <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 shadow-lg shadow-purple-500/20">
-            <Link2 className="h-8 w-8 text-white" />
-          </div>
           <h2 className="mb-4 text-4xl font-semibold tracking-tight sm:text-5xl">
             Seamlessly Connected to M-axis & Dify
           </h2>

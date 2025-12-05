@@ -51,8 +51,8 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
   const [config, setConfig] = useState<DifyConfig | null>(null)
   const [conversationId, setConversationId] = useState<string | null>(null)
 
-  // 에이전트별 localStorage 키 (v2: 기본값 포함 버전)
-  const storageKey = `difyConfig_v2_${agentType}`
+  // 에이전트별 localStorage 키 (v3: State Chase API 키 변경)
+  const storageKey = `difyConfig_v3_${agentType}`
 
   useEffect(() => {
     loadConfig()
