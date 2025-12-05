@@ -91,7 +91,7 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
         },
         body: JSON.stringify({
           url: url,
-          apiKey: config.difyApiKey,
+          apiKey: config.difyApiKey.trim(), // API Key 앞뒤 공백 제거
           payload: payload,
         }),
       })

@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server"
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { url, apiKey, payload } = body
+    let { url, apiKey, payload } = body
 
     if (!url || !apiKey) {
       return NextResponse.json(
@@ -12,15 +12,25 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // API Key 정리 (앞뒤 공백 제거)
+    apiKey = apiKey.trim()
+    
     // 사용자가 입력한 URL을 그대로 사용 (수정하지 않음)
     console.log("[Dify Proxy] 요청 URL:", url)
+    console.log("[Dify Proxy] API Key 길이:", apiKey.length)
+    console.log("[Dify Proxy] API Key 앞부분:", apiKey.substring(0, 10) + "...")
+    console.log("[Dify Proxy] API Key 형식:", apiKey.startsWith("app-") ? "app- 형식" : "다른 형식")
+
+    // Authorization 헤더 생성
+    const authHeader = `Bearer ${apiKey}`
+    console.log("[Dify Proxy] Authorization 헤더 길이:", authHeader.length)
 
     // Dify API 호출 (서버 사이드에서 실행되므로 CORS 문제 없음)
     // 브라우저처럼 보이도록 User-Agent 추가 (일부 서버가 User-Agent를 체크할 수 있음)
     const response = await fetch(url, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${apiKey}`,
+        Authorization: authHeader,
         "Content-Type": "application/json",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept": "application/json",
@@ -68,7 +78,23 @@ export async function POST(request: NextRequest) {
         
         // Dify API 특정 에러 메시지 처리
         if (response.status === 401) {
-          errorMessage = "인증 실패: API Key가 올바르지 않거나 만료되었습니다. Dify에서 새로운 API Key를 발급받으세요."
+          // Dify의 실제 에러 메시지 확인
+          const difyErrorMsg = errorData.message || errorData.error || ""
+          console.error("[Dify Proxy] 401 인증 실패 상세:", {
+            message: difyErrorMsg,
+            code: errorData.code,
+            status: errorData.status,
+            fullError: errorData
+          })
+          
+          // 더 구체적인 에러 메시지 제공
+          if (difyErrorMsg.includes("invalid") || difyErrorMsg.includes("Invalid")) {
+            errorMessage = "인증 실패: API Key가 올바르지 않습니다. Dify에서 발급받은 API Key를 정확히 복사하여 입력하세요. (앞뒤 공백이 없는지 확인)"
+          } else if (difyErrorMsg.includes("expired") || difyErrorMsg.includes("Expired")) {
+            errorMessage = "인증 실패: API Key가 만료되었습니다. Dify에서 새로운 API Key를 발급받으세요."
+          } else {
+            errorMessage = `인증 실패: ${difyErrorMsg || "API Key가 올바르지 않거나 만료되었습니다. Dify에서 새로운 API Key를 발급받으세요."}`
+          }
         } else if (response.status === 403) {
           errorMessage = "권한 없음: 이 API Key로는 해당 작업을 수행할 권한이 없습니다."
         } else if (response.status === 404) {
