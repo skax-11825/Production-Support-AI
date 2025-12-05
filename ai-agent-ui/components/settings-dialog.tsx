@@ -137,7 +137,7 @@ export function SettingsDialog({ agentType, onConfigChange }: SettingsDialogProp
         setDifyStatus({ connected: false, message: "API Key가 올바르지 않습니다" })
         return
       }
-
+      
       // URL 정리
       let baseUrl = config.difyApiBase.trim().replace(/[,;\s\/]+$/, "")
       

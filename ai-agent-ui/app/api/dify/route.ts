@@ -122,7 +122,7 @@ export async function POST(request: NextRequest) {
       } else if (currentAppType === "completion") {
         cleanUrl = `${cleanUrl}/completion-messages`
       } else {
-        cleanUrl = `${cleanUrl}/chat-messages`
+      cleanUrl = `${cleanUrl}/chat-messages`
       }
     }
     

@@ -129,7 +129,7 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
     
     // /v1이 없으면 추가
     if (!baseUrl.match(/\/v\d+$/)) {
-      baseUrl = `${baseUrl}/v1`
+        baseUrl = `${baseUrl}/v1`
     }
     
     // 챗봇 엔드포인트 (고정)
@@ -173,7 +173,7 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
           const errorData = JSON.parse(responseText)
           errorMessage = errorData.error || errorData.message || errorMessage
         } catch {
-          errorMessage = responseText.substring(0, 200) || errorMessage
+            errorMessage = responseText.substring(0, 200) || errorMessage
         }
         throw new Error(errorMessage)
       }
@@ -183,7 +183,7 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
       if (data.error) {
         throw new Error(data.error)
       }
-
+      
       // conversation_id 저장
       if (data.conversation_id) {
         setConversationId(data.conversation_id)
@@ -264,7 +264,7 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
                 }`}
               >
                 {message.role === "user" ? (
-                  <p className="leading-relaxed whitespace-pre-wrap">{message.content}</p>
+                <p className="leading-relaxed whitespace-pre-wrap">{message.content}</p>
                 ) : (
                   <div className="markdown-content">
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>

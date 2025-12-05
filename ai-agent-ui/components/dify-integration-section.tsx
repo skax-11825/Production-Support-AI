@@ -1,82 +1,6 @@
-"use client"
-
-import { useState, useRef } from "react"
 import { Card } from "@/components/ui/card"
 import { Workflow, Database, MessageSquare } from "lucide-react"
 import Image from "next/image"
-
-// 비디오 팝업 카드 컴포넌트
-function VideoPopupCard({
-  icon: Icon,
-  iconBg,
-  iconColor,
-  title,
-  description,
-  videoSrc,
-}: {
-  icon: React.ElementType
-  iconBg: string
-  iconColor: string
-  title: string
-  description: string
-  videoSrc?: string
-}) {
-  const [isHovered, setIsHovered] = useState(false)
-  const videoRef = useRef<HTMLVideoElement>(null)
-
-  const handleMouseEnter = () => {
-    setIsHovered(true)
-    if (videoRef.current) {
-      videoRef.current.currentTime = 0
-      videoRef.current.play()
-    }
-  }
-
-  const handleMouseLeave = () => {
-    setIsHovered(false)
-    if (videoRef.current) {
-      videoRef.current.pause()
-    }
-  }
-
-  return (
-    <div 
-      className="relative"
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
-    >
-      <Card className="border-border/50 bg-card p-6 transition-all hover:shadow-lg cursor-pointer">
-        <div className={`mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br ${iconBg} ${iconColor}`}>
-          <Icon className="h-5 w-5" />
-        </div>
-        <h3 className="mb-2 font-semibold">{title}</h3>
-        <p className="text-sm leading-relaxed text-muted-foreground">
-          {description}
-        </p>
-      </Card>
-      
-      {/* 비디오 팝업 */}
-      {videoSrc && isHovered && (
-        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 z-50 animate-in fade-in zoom-in-95 duration-200">
-          <div className="rounded-xl overflow-hidden shadow-2xl border border-border/50 bg-card">
-            <video
-              ref={videoRef}
-              src={videoSrc}
-              className="w-80 h-auto"
-              muted
-              loop
-              playsInline
-            />
-          </div>
-          {/* 화살표 */}
-          <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1">
-            <div className="w-3 h-3 bg-card border-r border-b border-border/50 transform rotate-45" />
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
 
 export function DifyIntegrationSection() {
   return (
@@ -104,31 +28,52 @@ export function DifyIntegrationSection() {
           </p>
         </div>
 
+        {/* Workflow 동영상 */}
+        <div className="mx-auto mb-8 max-w-4xl">
+          <div className="overflow-hidden rounded-2xl border border-border/50 shadow-lg">
+            <video 
+              className="w-full" 
+              autoPlay 
+              loop 
+              muted 
+              playsInline
+            >
+              <source src="/dify_workflow.mp4" type="video/mp4" />
+              Your browser does not support the video tag.
+            </video>
+          </div>
+        </div>
+
         <div className="mx-auto grid max-w-4xl gap-6 md:grid-cols-3">
-          <VideoPopupCard
-            icon={Workflow}
-            iconBg="from-emerald-500/20 to-teal-500/20"
-            iconColor="text-emerald-600 dark:text-emerald-400"
-            title="Workflow Engine"
-            description="Leverage Dify's visual workflow builder for custom error handling logic"
-            videoSrc="/dify_workflow.mp4"
-          />
+          <Card className="border-border/50 bg-card p-6">
+            <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500/20 to-teal-500/20 text-emerald-600 dark:text-emerald-400">
+              <Workflow className="h-5 w-5" />
+            </div>
+            <h3 className="mb-2 font-semibold">Workflow Engine</h3>
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              Leverage Dify's visual workflow builder for custom error handling logic
+            </p>
+          </Card>
 
-          <VideoPopupCard
-            icon={Database}
-            iconBg="from-blue-500/20 to-cyan-500/20"
-            iconColor="text-blue-600 dark:text-blue-400"
-            title="Knowledge Base"
-            description="Connect to Dify's knowledge management for context-aware responses"
-          />
+          <Card className="border-border/50 bg-card p-6">
+            <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500/20 to-cyan-500/20 text-blue-600 dark:text-blue-400">
+              <Database className="h-5 w-5" />
+            </div>
+            <h3 className="mb-2 font-semibold">Knowledge Base</h3>
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              Connect to Dify's knowledge management for context-aware responses
+            </p>
+          </Card>
 
-          <VideoPopupCard
-            icon={MessageSquare}
-            iconBg="from-purple-500/20 to-pink-500/20"
-            iconColor="text-purple-600 dark:text-purple-400"
-            title="LLM Models"
-            description="Access multiple AI models through Dify's unified API gateway"
-          />
+          <Card className="border-border/50 bg-card p-6">
+            <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-purple-500/20 to-pink-500/20 text-purple-600 dark:text-purple-400">
+              <MessageSquare className="h-5 w-5" />
+            </div>
+            <h3 className="mb-2 font-semibold">LLM Models</h3>
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              Access multiple AI models through Dify's unified API gateway
+            </p>
+          </Card>
         </div>
       </div>
     </section>
