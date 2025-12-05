@@ -16,11 +16,14 @@ export async function POST(request: NextRequest) {
     console.log("[Dify Proxy] 요청 URL:", url)
 
     // Dify API 호출 (서버 사이드에서 실행되므로 CORS 문제 없음)
+    // 브라우저처럼 보이도록 User-Agent 추가 (일부 서버가 User-Agent를 체크할 수 있음)
     const response = await fetch(url, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "application/json",
       },
       body: JSON.stringify(payload),
     })
