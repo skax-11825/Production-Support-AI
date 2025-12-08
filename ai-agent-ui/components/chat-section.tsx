@@ -16,7 +16,7 @@ export function ChatSection() {
     {
       role: "assistant",
       content:
-        "Hello! I'm Error Lense AI. I can help you analyze errors, suggest solutions, and answer questions about your systems. How can I assist you today?",
+        "Hello! I'm Error Lens AI. I can help you analyze errors, suggest solutions, and answer questions about your systems. How can I assist you today?",
     },
   ])
   const [input, setInput] = useState("")
@@ -33,7 +33,7 @@ export function ChatSection() {
       const aiMessage: Message = {
         role: "assistant",
         content:
-          "I've analyzed your request. Based on the error patterns in your system, I recommend checking the database connection pool settings. This is a demo response - in production, Error Lense would provide detailed analysis powered by Dify workflows.",
+          "I've analyzed your request. Based on the error patterns in your system, I recommend checking the database connection pool settings. This is a demo response - in production, Error Lens would provide detailed analysis powered by Dify workflows.",
       }
       setMessages((prev) => [...prev, aiMessage])
     }, 1000)
@@ -43,9 +43,9 @@ export function ChatSection() {
     <section id="chat" className="border-t border-border/40 bg-secondary/30 py-32">
       <div className="container mx-auto px-6">
         <div className="mb-16 text-center">
-          <h2 className="mb-4 text-4xl font-semibold tracking-tight sm:text-5xl">Try Error Lense Now</h2>
+          <h2 className="mb-4 text-4xl font-semibold tracking-tight sm:text-5xl">Try Error Lens Now</h2>
           <p className="mx-auto max-w-2xl text-balance text-lg leading-relaxed text-muted-foreground">
-            Experience the power of agentic AI. Ask questions, analyze errors, or explore how Error Lense can help your
+            Experience the power of agentic AI. Ask questions, analyze errors, or explore how Error Lens can help your
             team.
           </p>
         </div>
@@ -81,7 +81,7 @@ export function ChatSection() {
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyPress={(e) => e.key === "Enter" && handleSend()}
-                  placeholder="Ask Error Lense anything..."
+                  placeholder="Ask Error Lens anything..."
                   className="flex-1 rounded-full border-border/50 bg-secondary/50 px-6"
                 />
                 <Button onClick={handleSend} size="icon" className="h-11 w-11 shrink-0 rounded-full">

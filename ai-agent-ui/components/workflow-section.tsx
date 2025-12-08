@@ -29,7 +29,7 @@ export function WorkflowSection() {
       <div className="mb-16 text-center">
         <h2 className="mb-4 text-4xl font-semibold tracking-tight sm:text-5xl">Intelligent Workflow</h2>
         <p className="mx-auto max-w-2xl text-balance text-lg leading-relaxed text-muted-foreground">
-          Error Lense uses a sophisticated multi-step workflow powered by Dify to detect, analyze, and resolve errors
+          Error Lens uses a sophisticated multi-step workflow powered by Dify to detect, analyze, and resolve errors
           automatically.
         </p>
       </div>

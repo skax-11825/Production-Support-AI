@@ -40,7 +40,7 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
   const initialMessage =
     agentType === "state-chase"
       ? "안녕하세요! State Chase Agent입니다. 무엇을 도와드릴까요?"
-      : "안녕하세요! Error Lense Agent입니다. 무엇을 도와드릴까요?"
+      : "안녕하세요! Error Lens Agent입니다. 무엇을 도와드릴까요?"
 
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -229,7 +229,7 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
         {/* 헤더: 설정 버튼 */}
         <div className="flex items-center justify-between border-b border-border/50 px-4 py-2">
           <h3 className="text-lg font-bold text-foreground">
-            {agentType === "state-chase" ? "State Chase Agent" : "Error Lense Agent"}
+            {agentType === "state-chase" ? "State Chase Agent" : "Error Lens Agent"}
           </h3>
           <SettingsDialog 
             agentType={agentType} 
@@ -303,7 +303,7 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyPress={(e) => e.key === "Enter" && !e.shiftKey && !isLoading && handleSend()}
-              placeholder={agentType === "state-chase" ? "State Chase에게 질문하세요..." : "Error Lense에게 질문하세요..."}
+              placeholder={agentType === "state-chase" ? "State Chase에게 질문하세요..." : "Error Lens에게 질문하세요..."}
               className="flex-1 rounded-full border-border/50 bg-secondary/50 px-6"
               disabled={isLoading}
             />

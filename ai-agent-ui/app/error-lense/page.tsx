@@ -12,7 +12,7 @@ export default function ErrorLensePage() {
           <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-3xl bg-gradient-to-br from-orange-500 to-red-600 shadow-xl shadow-red-500/30">
             <AlertCircle className="h-10 w-10 text-white" />
           </div>
-          <h1 className="mb-4 text-5xl font-semibold tracking-tight sm:text-6xl">Error Lense Agent</h1>
+          <h1 className="mb-4 text-5xl font-semibold tracking-tight sm:text-6xl">Error Lens Agent</h1>
           <p className="mx-auto max-w-2xl text-balance text-lg leading-relaxed text-muted-foreground">
             장비 에러 및 작업 이력을 통합 분석해 엔지니어에게 즉각적으로 에러 원인 및 조치 방안에 대한 인사이트를 제공하는 AI 에이전트
           </p>
