@@ -1,7 +1,7 @@
 import { Header } from "@/components/header"
 import { ChatInterface } from "@/components/chat-interface"
 import { Card } from "@/components/ui/card"
-import { AlertCircle, Search, ShieldCheck, Lightbulb } from "lucide-react"
+import { Search, ShieldCheck, Lightbulb } from "lucide-react"
 
 export default function ErrorLensePage() {
   return (
@@ -10,7 +10,7 @@ export default function ErrorLensePage() {
       <div className="container mx-auto px-6 pt-32 pb-16">
         <div className="mb-16 text-center">
           <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-3xl bg-gradient-to-br from-orange-500 to-red-600 shadow-xl shadow-red-500/30">
-            <AlertCircle className="h-10 w-10 text-white" />
+            <Search className="h-10 w-10 text-white" />
           </div>
           <h1 className="mb-4 text-5xl font-semibold tracking-tight sm:text-6xl">Error Lens Agent</h1>
           <p className="mx-auto max-w-2xl text-balance text-lg leading-relaxed text-muted-foreground">

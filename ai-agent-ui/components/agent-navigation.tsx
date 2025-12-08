@@ -1,6 +1,6 @@
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { TrendingUp, AlertCircle, ArrowRight } from "lucide-react"
+import { TrendingUp, Search, ArrowRight } from "lucide-react"
 import Link from "next/link"
 
 export function AgentNavigation() {
@@ -16,7 +16,7 @@ export function AgentNavigation() {
       shadowColor: "shadow-purple-500/30",
     },
     {
-      icon: AlertCircle,
+      icon: Search,
       title: "Error Lens Agent",
       description:
         "장비 에러 및 작업 이력을 통합 분석해 엔지니어에게 즉각적으로 에러 원인 및 조치 방안에 대한 인사이트를 제공하는 AI 에이전트",
