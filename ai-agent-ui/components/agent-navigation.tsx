@@ -7,7 +7,7 @@ export function AgentNavigation() {
   const agents = [
     {
       icon: TrendingUp,
-      title: "State Chase Agent",
+      title: "State Trace Agent",
       description:
         "실시간 생산•설비 데이터를 기반으로 설비 조회, 작업 우선순위 추천, 원인 분석을 수행하는 제조용 AI 에이전트",
       href: "/state-chase",

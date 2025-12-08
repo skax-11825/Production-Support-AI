@@ -31,7 +31,7 @@ interface SettingsDialogProps {
 }
 
 export function SettingsDialog({ agentType, onConfigChange }: SettingsDialogProps) {
-  // 에이전트별 localStorage 키 (v3: State Chase API 키 변경)
+  // 에이전트별 localStorage 키 (v3: State Trace API 키 변경)
   const storageKey = `difyConfig_v3_${agentType}`
   const defaultApiKey = DEFAULT_API_KEYS[agentType]
   

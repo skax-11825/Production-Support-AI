@@ -12,7 +12,7 @@ export default function StateChaseAgentPage() {
           <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-3xl bg-gradient-to-br from-blue-500 to-purple-600 shadow-xl shadow-purple-500/30">
             <TrendingUp className="h-10 w-10 text-white" />
           </div>
-          <h1 className="mb-4 text-5xl font-semibold tracking-tight sm:text-6xl">State Chase Agent</h1>
+          <h1 className="mb-4 text-5xl font-semibold tracking-tight sm:text-6xl">State Trace Agent</h1>
           <p className="mx-auto max-w-2xl text-balance text-lg leading-relaxed text-muted-foreground">
           실시간 생산•설비 데이터를 기반 비어있는 설비 조회, 작업 우선순위 추천, 원인 분석을 수행하는 제조용 AI 에이전트
           </p>
