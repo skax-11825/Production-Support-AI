@@ -56,6 +56,7 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
   // 자동 스크롤을 위한 ref
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
+  const lastUserMessageRef = useRef<HTMLDivElement>(null)
 
   // 에이전트별 localStorage 키 (v3: State Chase API 키 변경)
   const storageKey = `difyConfig_v3_${agentType}`
@@ -64,9 +65,15 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
     loadConfig()
   }, [agentType])
 
-  // 메시지 변경 또는 로딩 시 자동 스크롤
+  // 메시지 변경 또는 로딩 시 자동 스크롤 - 사용자 질문이 상단에 오도록
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+    // 첫 메시지(환영 메시지)만 있을 때는 스크롤 안 함
+    if (messages.length <= 1) return
+    
+    // 마지막 사용자 메시지가 있으면 해당 위치로 스크롤 (상단 정렬)
+    if (lastUserMessageRef.current) {
+      lastUserMessageRef.current.scrollIntoView({ behavior: "smooth", block: "start" })
+    }
   }, [messages, isLoading])
 
   const loadConfig = () => {
@@ -239,8 +246,17 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
 
         {/* 메시지 영역 */}
         <div ref={messagesContainerRef} className="flex-1 space-y-6 overflow-y-auto p-6">
-          {messages.map((message, index) => (
-            <div key={index} className={`flex gap-4 ${message.role === "user" ? "flex-row-reverse" : "flex-row"}`}>
+          {messages.map((message, index) => {
+            // 마지막 사용자 메시지인지 확인 (이후에 다른 user 메시지가 없는 경우)
+            const isLastUserMessage = message.role === "user" && 
+              messages.slice(index + 1).every(m => m.role !== "user")
+            
+            return (
+            <div 
+              key={index} 
+              ref={isLastUserMessage ? lastUserMessageRef : null}
+              className={`flex gap-4 ${message.role === "user" ? "flex-row-reverse" : "flex-row"}`}
+            >
               <div
                 className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${
                   message.role === "user" 
@@ -274,7 +290,8 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
                 )}
               </div>
             </div>
-          ))}
+            )
+          })}
           {isLoading && (
             <div className="flex gap-4">
               <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${
