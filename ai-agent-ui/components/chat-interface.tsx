@@ -57,6 +57,7 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const lastUserMessageRef = useRef<HTMLDivElement>(null)
+  const chatContainerRef = useRef<HTMLDivElement>(null)
 
   // 에이전트별 localStorage 키 (v3: State Chase API 키 변경)
   const storageKey = `difyConfig_v3_${agentType}`
@@ -64,6 +65,15 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
   useEffect(() => {
     loadConfig()
   }, [agentType])
+
+  // 페이지 로드 시 채팅창으로 자동 스크롤
+  useEffect(() => {
+    // 약간의 딜레이 후 스크롤 (페이지 렌더링 완료 후)
+    const timer = setTimeout(() => {
+      chatContainerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+    }, 100)
+    return () => clearTimeout(timer)
+  }, [])
 
   // 메시지 변경 또는 로딩 시 자동 스크롤 - 사용자 질문이 상단에 오도록
   useEffect(() => {
@@ -231,7 +241,7 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
   }
 
   return (
-    <Card className="mx-auto max-w-5xl border-border/50 bg-card">
+    <Card ref={chatContainerRef} className="mx-auto max-w-5xl border-border/50 bg-card">
       <div className="flex h-[600px] flex-col">
         {/* 헤더: 설정 버튼 */}
         <div className="flex items-center justify-between border-b border-border/50 px-4 py-2">
