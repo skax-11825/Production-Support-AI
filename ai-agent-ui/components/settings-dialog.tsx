@@ -22,7 +22,7 @@ const DEFAULT_NGROK_URL = "https://youlanda-unconciliatory-unmirthfully.ngrok-fr
 // 에이전트별 기본 API Key
 const DEFAULT_API_KEYS: Record<AgentType, string> = {
   "error-lense": "app-hKVB2xN9C5deXeavB9SAfkRo",
-  "state-chase": "app-rzR04Xc0vdXlhXaHN6XXqXPr",
+  "state-chase": "app-XM30CYZpFY9ECH59lH1s1Erg",
 }
 
 interface SettingsDialogProps {
