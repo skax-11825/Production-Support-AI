@@ -14,7 +14,7 @@ type Message = {
   content: string
 }
 
-type AgentType = "state-chase" | "error-lense"
+type AgentType = "state-chase" | "error-lens"
 
 interface ChatInterfaceProps {
   agentType: AgentType
@@ -32,7 +32,7 @@ const DEFAULT_NGROK_URL = "https://youlanda-unconciliatory-unmirthfully.ngrok-fr
 
 // 에이전트별 기본 API Key
 const DEFAULT_API_KEYS: Record<AgentType, string> = {
-  "error-lense": "app-hKVB2xN9C5deXeavB9SAfkRo",
+  "error-lens": "app-hKVB2xN9C5deXeavB9SAfkRo",
   "state-chase": "app-XM30CYZpFY9ECH59lH1s1Erg",
 }
 
@@ -42,10 +42,10 @@ const SUGGESTED_QUESTIONS: Record<AgentType, string[]> = {
     "PAVB814 설비가 현재 멈춰있는데, 대체 가능한 설비 알려줘",
     "OP20, FLASH 제품 투입 가능한 설비 알려줘",
     "OP10, DRAM 우선 투입할 LOT 3개 추천해줘",
-    "L990505019 진행 안되고 있는 이유 알려줘",
+    "L990505010 후속 공정 진행 안되는 이유 알려줘",
     "L990505011 진행 안되고 있는 이유 알려줘",
   ],
-  "error-lense": [
+  "error-lens": [
     "ASML_PH_#018 노광 품질 저하 주요 원인 알려줘",
     "2025년 5월 Cleaning 공정 에러 건수 보여줘",
     "M14-IMP-006 2025년 총 에러 횟수와 주로 조치한 방법 알려줘",

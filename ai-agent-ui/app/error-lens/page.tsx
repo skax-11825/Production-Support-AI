@@ -50,7 +50,7 @@ export default function ErrorLensePage() {
           </Card>
         </div>
 
-        <ChatInterface agentType="error-lense" />
+        <ChatInterface agentType="error-lens" />
       </div>
     </main>
   )
