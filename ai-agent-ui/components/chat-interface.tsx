@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Send, User, Loader2, Bot } from "lucide-react"
+import { Send, User, Loader2, Bot, MessageSquare } from "lucide-react"
 import { SettingsDialog } from "@/components/settings-dialog"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
@@ -34,6 +34,24 @@ const DEFAULT_NGROK_URL = "https://youlanda-unconciliatory-unmirthfully.ngrok-fr
 const DEFAULT_API_KEYS: Record<AgentType, string> = {
   "error-lense": "app-hKVB2xN9C5deXeavB9SAfkRo",
   "state-chase": "app-XM30CYZpFY9ECH59lH1s1Erg",
+}
+
+// 에이전트별 추천 질문 (시연용)
+const SUGGESTED_QUESTIONS: Record<AgentType, string[]> = {
+  "state-chase": [
+    "PAVB814 설비가 현재 멈춰있는데, 대체 가능한 설비 알려줘",
+    "OP20, FLASH 제품 투입 가능한 설비 알려줘",
+    "OP10, DRAM 우선 투입할 LOT 3개 추천해줘",
+    "L990505019 진행 안되고 있는 이유 알려줘",
+    "L990505011 진행 안되고 있는 이유 알려줘",
+  ],
+  "error-lense": [
+    "ASML_PH_#018 노광 품질 저하 주요 원인 알려줘",
+    "2025년 5월 Cleaning 공정 에러 건수 보여줘",
+    "M14-IMP-006 2025년 총 에러 횟수와 주로 조치한 방법 알려줘",
+    "정수진 책임이 지금 진행 중인 작업 있어?",
+    "M14-ET-008(Lam kiyo) ET_VAC_099 에러 조치 방법 알려줘",
+  ],
 }
 
 export function ChatInterface({ agentType }: ChatInterfaceProps) {
@@ -240,19 +258,28 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
     }
   }
 
+  // 추천 질문 클릭 핸들러
+  const handleSuggestedQuestion = (question: string) => {
+    setInput(question)
+  }
+
+  const suggestedQuestions = SUGGESTED_QUESTIONS[agentType]
+
   return (
-    <Card ref={chatContainerRef} className="mx-auto max-w-5xl border-border/50 bg-card">
-      <div className="flex h-[600px] flex-col">
-        {/* 헤더: 설정 버튼 */}
-        <div className="flex items-center justify-between border-b border-border/50 px-4 py-2">
-          <h3 className="text-lg font-bold text-foreground">
-            {agentType === "state-chase" ? "State Trace Agent" : "Error Lens Agent"}
-          </h3>
-          <SettingsDialog 
-            agentType={agentType} 
-            onConfigChange={handleConfigChange} 
-          />
-        </div>
+    <div ref={chatContainerRef} className="mx-auto max-w-7xl flex gap-6">
+      {/* 메인 채팅 영역 */}
+      <Card className="flex-1 border-border/50 bg-card">
+        <div className="flex h-[600px] flex-col">
+          {/* 헤더: 설정 버튼 */}
+          <div className="flex items-center justify-between border-b border-border/50 px-4 py-2">
+            <h3 className="text-lg font-bold text-foreground">
+              {agentType === "state-chase" ? "State Trace Agent" : "Error Lens Agent"}
+            </h3>
+            <SettingsDialog 
+              agentType={agentType} 
+              onConfigChange={handleConfigChange} 
+            />
+          </div>
 
         {/* 메시지 영역 */}
         <div ref={messagesContainerRef} className="flex-1 space-y-6 overflow-y-auto p-6">
@@ -348,7 +375,47 @@ export function ChatInterface({ agentType }: ChatInterfaceProps) {
             </Button>
           </div>
         </div>
-      </div>
-    </Card>
+        </div>
+      </Card>
+
+      {/* 추천 질문 사이드바 */}
+      <Card className="w-80 shrink-0 border-border/50 bg-card">
+        <div className="flex h-[600px] flex-col">
+          <div className="border-b border-border/50 px-4 py-3">
+            <div className="flex items-center gap-2">
+              <MessageSquare className="h-5 w-5 text-muted-foreground" />
+              <h3 className="font-semibold text-foreground">추천 질문</h3>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">클릭하면 입력창에 자동 입력됩니다</p>
+          </div>
+          <div className="flex-1 overflow-y-auto p-4">
+            <div className="space-y-3">
+              {suggestedQuestions.map((question, index) => (
+                <button
+                  key={index}
+                  onClick={() => handleSuggestedQuestion(question)}
+                  className={`w-full text-left p-3 rounded-xl border transition-all hover:shadow-md ${
+                    agentType === "state-chase"
+                      ? "border-blue-200 bg-blue-50/50 hover:bg-blue-100/70 hover:border-blue-300 dark:border-blue-800 dark:bg-blue-950/30 dark:hover:bg-blue-900/50"
+                      : "border-orange-200 bg-orange-50/50 hover:bg-orange-100/70 hover:border-orange-300 dark:border-orange-800 dark:bg-orange-950/30 dark:hover:bg-orange-900/50"
+                  }`}
+                >
+                  <div className="flex items-start gap-2">
+                    <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-medium text-white ${
+                      agentType === "state-chase"
+                        ? "bg-gradient-to-br from-blue-500 to-purple-600"
+                        : "bg-gradient-to-br from-orange-500 to-red-600"
+                    }`}>
+                      {index + 1}
+                    </span>
+                    <span className="text-sm leading-relaxed text-foreground">{question}</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </Card>
+    </div>
   )
 }
